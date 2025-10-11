@@ -1,16 +1,42 @@
 "use client"
 
 const airlines = [
-  { name: "Delta Air Lines", query: "Delta Airline Logo" },
-  { name: "United Airlines", query: "United Airline Logo" },
-  { name: "American Airlines", query: "American Airline Logo" },
-  { name: "Lufthansa", query: "Lufthansa Airline Logo" },
-  { name: "Emirates", query: "Emirates Airline Logo" },
-  { name: "Qatar Airways", query: "Qatar Airways Logo" },
-  { name: "Air France", query: "Air France Logo" },
-  { name: "KLM", query: "KLM Airline Logo" },
-  { name: "British Airways", query: "British Airways Logo" },
-  { name: "Singapore Airlines", query: "Singapore Airlines Logo" },
+  { 
+    name: "Delta Air Lines", 
+    logo: `https://img.logo.dev/delta.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "United Airlines", 
+    logo: `https://img.logo.dev/united.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "American Airlines", 
+    logo: `https://img.logo.dev/aa.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "Lufthansa", 
+    logo: `https://img.logo.dev/lufthansa.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "Emirates", 
+    logo: `https://img.logo.dev/emirates.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "Qatar Airways", 
+    logo: `https://img.logo.dev/qatarairways.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "Air France", 
+    logo: `https://img.logo.dev/airfrance.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "British Airways", 
+    logo: `https://img.logo.dev/ba.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
+  { 
+    name: "Singapore Airlines", 
+    logo: `https://img.logo.dev/singaporeair.com?token=${process.env.NEXT_PUBLIC_LOGO_DEV_API_KEY}` 
+  },
 ]
 
 export function AirlineCarousel() {
@@ -20,17 +46,21 @@ export function AirlineCarousel() {
       <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-background to-transparent" />
 
       <ul
-        className="flex gap-8 md:gap-10 items-center animate-[marquee_30s_linear_infinite] motion-reduce:animate-none will-change-transform"
+        className="flex gap-8 md:gap-10 items-center marquee motion-reduce:animate-none will-change-transform"
         role="list"
         aria-live="polite"
       >
-        {[...airlines, ...airlines].map((a, i) => (
+        {[...airlines, ...airlines, ...airlines].map((a, i) => (
           <li key={`${a.name}-${i}`} className="shrink-0">
             <div className="flex items-center gap-3">
               <img
-                src={`/placeholder.svg?height=40&width=120&query=${encodeURIComponent(a.query)}`}
+                src={a.logo}
                 alt={`${a.name} logo`}
-                className="h-10 w-[120px] object-contain"
+                className="h-12 w-[140px] object-contain"
+                onError={(e) => {
+                  // Fallback to a placeholder if logo fails to load
+                  e.currentTarget.src = `/placeholder.svg?height=48&width=140&text=${encodeURIComponent(a.name)}`
+                }}
               />
             </div>
           </li>
@@ -38,12 +68,16 @@ export function AirlineCarousel() {
       </ul>
 
       <style jsx>{`
+        .marquee {
+          animation: marquee 15s linear infinite;
+        }
+        
         @keyframes marquee {
-          from {
+          0% {
             transform: translateX(0);
           }
-          to {
-            transform: translateX(-50%);
+          100% {
+            transform: translateX(-33.333%);
           }
         }
       `}</style>

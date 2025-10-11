@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 export function HowItWorks() {
   const steps = [
     {
-      title: "1. Buy cover",
+      title: "1. Buy coverage",
       text: "Choose your flight and purchase coverage with a fixed premium. Your policy is recorded on-chain.",
     },
     {
