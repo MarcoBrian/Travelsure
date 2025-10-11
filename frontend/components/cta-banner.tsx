@@ -13,9 +13,8 @@ export function CtaBanner() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button size="lg">Get Covered</Button>
           <Button size="lg" variant="outline">
-            Contact sales
+            Get Covered
           </Button>
         </div>
       </div>
