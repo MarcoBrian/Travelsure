@@ -247,7 +247,7 @@ export function FlightInsuranceForm() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">
-                Travelsure Assemble 💪
+                Travelsure - Insurance 
               </h2>
               <p className="text-blue-100 text-sm mt-0.5">
                 Powered by PYUSD
