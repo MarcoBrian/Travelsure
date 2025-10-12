@@ -2,7 +2,7 @@
 
 import { createAppKit } from "@reown/appkit/react";
 import { Ethers5Adapter } from "@reown/appkit-adapter-ethers5";
-import { mainnet, arbitrum, polygon, optimism, base } from "@reown/appkit/networks";
+import { mainnet, arbitrum, polygon, optimism, base, sepolia, arbitrumSepolia, polygonMumbai, optimismSepolia, baseSepolia } from "@reown/appkit/networks";
 import { ReactNode } from "react";
 
 // 1. Get projectId at https://dashboard.reown.com
@@ -20,7 +20,20 @@ const metadata = {
 createAppKit({
   adapters: [new Ethers5Adapter()],
   metadata: metadata,
-  networks: [mainnet, arbitrum, polygon, optimism, base],
+  networks: [
+    // Mainnet networks
+    mainnet, 
+    arbitrum, 
+    polygon, 
+    optimism, 
+    base,
+    // Testnet networks
+    sepolia,
+    arbitrumSepolia,
+    polygonMumbai,
+    optimismSepolia,
+    baseSepolia
+  ],
   projectId,
   features: {
     analytics: true,
