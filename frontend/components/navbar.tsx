@@ -1,11 +1,34 @@
 "use client"
 import { Button } from "@/components/ui/button"
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 
 export function Navbar() {
+  const { address, isConnected } = useAppKitAccount()
+  const { open } = useAppKit()
+  const router = useRouter()
+
+  // Navigate to dashboard when wallet is connected
+  useEffect(() => {
+    if (isConnected && window.location.pathname === "/") {
+      router.push("/dashboard")
+    }
+  }, [isConnected, router])
+
+  const handleButtonClick = () => {
+    if (isConnected) {
+      router.push("/dashboard")
+    } else {
+      // Open the AppKit modal
+      open()
+    }
+  }
+
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-6xl px-4 h-14 md:h-16 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-3">
+        <a href="/" className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             {/* Shield Icon */}
             <div className="relative">
@@ -43,7 +66,16 @@ export function Navbar() {
         <nav className="hidden md:flex items-center gap-6 text-sm">
         </nav>
         <div className="flex items-center gap-2">
-          <Button>Launch App</Button>
+          {/* Custom button */}
+          {isConnected ? (
+            <div className="flex items-center gap-2">
+              <appkit-button />
+            </div>
+          ) : (
+            <Button onClick={handleButtonClick}>
+              Connect Wallet
+            </Button>
+          )}
         </div>
       </div>
     </header>
