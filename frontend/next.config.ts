@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
+  serverExternalPackages: ['@coinbase/wallet-sdk']
 };
 
 export default nextConfig;
