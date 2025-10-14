@@ -1,6 +1,6 @@
 "use client"
 
-import { useAccount } from "@/lib/wallet-context"
+import { useAccount } from "wagmi"
 import { useRouter } from "next/navigation"
 import { useEffect, Suspense } from "react"
 import { Navbar } from "@/components/navbar"

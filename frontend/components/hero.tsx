@@ -13,14 +13,14 @@ export function Hero() {
   }, [router])
 
   // Lazy-load heavy visual to speed up first paint
-  // const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
-  //   ssr: false,
-  //   loading: () => <div className="absolute inset-0" />
-  // })
+  const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
+    ssr: false,
+    loading: () => <div className="absolute inset-0" />
+  })
   return (
     <section className="relative overflow-hidden">
       {/* World Map Background */}
-      {/* <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0">
         <WorldMap
           dots={[
             {
@@ -50,7 +50,7 @@ export function Hero() {
           ]}
           lineColor="#0ea5e9"
         />
-      </div> */}
+      </div>
       
       {/* Content with backdrop */}
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-14 md:py-24">

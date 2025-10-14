@@ -1,28 +1,11 @@
 "use client"
 import { Button } from "@/components/ui/button"
-import { useAccount, useWallet } from "@/lib/wallet-context"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { ConnectButton } from "@rainbow-me/rainbowkit"
+import { useAccount, useConnect, useDisconnect } from "wagmi"
 
 export function Navbar() {
   const { address, isConnected } = useAccount()
-  const { connect, disconnect, isConnecting, error, isMetaMaskInstalled } = useWallet()
-  const router = useRouter()
 
-  // Navigate to dashboard when wallet is connected
-  useEffect(() => {
-    if (isConnected && window.location.pathname === "/") {
-      router.push("/dashboard")
-    }
-  }, [isConnected, router])
-
-  const handleConnect = async () => {
-    if (isConnected) {
-      router.push("/dashboard")
-    } else {
-      await connect()
-    }
-  }
 
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
@@ -69,50 +52,7 @@ export function Navbar() {
         <nav className="hidden md:flex items-center gap-6 text-sm">
         </nav>
         <div className="flex items-center gap-2">
-          {!isMetaMaskInstalled ? (
-            <Button 
-              onClick={() => window.open('https://metamask.io/download/', '_blank')}
-              variant="outline"
-            >
-              Install MetaMask
-            </Button>
-          ) : isConnected ? (
-            <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm text-green-700 font-medium">
-                  {formatAddress(address!)}
-                </span>
-              </div>
-              <Button 
-                onClick={disconnect}
-                variant="outline"
-                size="sm"
-              >
-                Disconnect
-              </Button>
-            </div>
-          ) : (
-            <Button 
-              onClick={handleConnect}
-              disabled={isConnecting}
-            >
-              {isConnecting ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Connecting...
-                </div>
-              ) : (
-                'Connect MetaMask'
-              )}
-            </Button>
-          )}
-          
-          {error && (
-            <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
-            </div>
-          )}
+          <ConnectButton />
         </div>
       </div>
     </header>
