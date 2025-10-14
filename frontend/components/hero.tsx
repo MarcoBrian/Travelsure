@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button"
-import WorldMap from "@/components/ui/world-map"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { useEffect } from "react"
 
 export function Hero() {
@@ -10,10 +11,16 @@ export function Hero() {
   useEffect(() => {
     router.prefetch("/dashboard")
   }, [router])
+
+  // Lazy-load heavy visual to speed up first paint
+  // const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
+  //   ssr: false,
+  //   loading: () => <div className="absolute inset-0" />
+  // })
   return (
     <section className="relative overflow-hidden">
       {/* World Map Background */}
-      <div className="absolute inset-0 z-0">
+      {/* <div className="absolute inset-0 z-0">
         <WorldMap
           dots={[
             {
@@ -43,7 +50,7 @@ export function Hero() {
           ]}
           lineColor="#0ea5e9"
         />
-      </div>
+      </div> */}
       
       {/* Content with backdrop */}
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-14 md:py-24">
@@ -64,8 +71,10 @@ export function Hero() {
               
             </p>
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Button size="lg" className="sm:w-auto w-full" onClick={() => router.push("/dashboard") }>
-                Get Covered
+              <Button size="lg" className="sm:w-auto w-full cursor-pointer" asChild>
+                <Link href="/dashboard" prefetch>
+                  Get Covered
+                </Link>
               </Button>
               <Button 
                 size="lg" 

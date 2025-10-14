@@ -5,11 +5,15 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { Navbar } from "@/components/navbar"
 import { FlightInsuranceForm } from "@/components/flight-insurance-form"
-import WorldMap from "@/components/ui/world-map"
+import dynamic from "next/dynamic"
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount()
   const router = useRouter()
+  const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
+    ssr: false,
+    loading: () => <div className="absolute inset-0 w-full h-full" />
+  })
 
   // Redirect to home if not connected
   useEffect(() => {
@@ -26,7 +30,7 @@ export default function DashboardPage() {
     <main className="min-h-screen relative overflow-hidden">
       {/* World Map Background */}
       <div className="absolute inset-0 w-full h-full">
-        <WorldMap 
+        {/* <WorldMap 
           dots={[
             {
               start: { lat: 40.7128, lng: -74.0060, label: "New York" },
@@ -42,7 +46,7 @@ export default function DashboardPage() {
             }
           ]}
           lineColor="#3b82f6"
-        />
+        /> */}
       </div>
       
       {/* Content */}
