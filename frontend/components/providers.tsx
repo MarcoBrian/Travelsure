@@ -1,45 +1,24 @@
 "use client";
 
-import { createAppKit } from "@reown/appkit/react";
-import { Ethers5Adapter } from "@reown/appkit-adapter-ethers5";
-import { mainnet, arbitrum, polygon, optimism, base, sepolia, arbitrumSepolia, polygonMumbai, optimismSepolia, baseSepolia } from "@reown/appkit/networks";
+import "@rainbow-me/rainbowkit/styles.css";
 import { ReactNode } from "react";
+import { WagmiProvider } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { wagmiConfig } from "@/lib/wagmi";
 
-// 1. Get projectId at https://dashboard.reown.com
-const projectId = "845fb350ba83d50180234b4f77a4455a";
+// wagmiConfig is provided as a singleton from @/lib/wagmi
 
-// 2. Create a metadata object
-const metadata = {
-  name: "Travelsure",
-  description: "Web3 Flight Insurance - Protect your travels with blockchain-powered insurance",
-  url: "https://travelsure.com",
-  icons: ["https://travelsure.com/icon.png"],
-};
-
-// 3. Create the AppKit instance
-createAppKit({
-  adapters: [new Ethers5Adapter()],
-  metadata: metadata,
-  networks: [
-    // Mainnet networks
-    mainnet, 
-    arbitrum, 
-    polygon, 
-    optimism, 
-    base,
-    // Testnet networks
-    sepolia,
-    arbitrumSepolia,
-    polygonMumbai,
-    optimismSepolia,
-    baseSepolia
-  ],
-  projectId,
-  features: {
-    analytics: true,
-  },
-});
+const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return (
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider showRecentTransactions={true}>
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  );
 }

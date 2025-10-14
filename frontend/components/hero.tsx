@@ -2,8 +2,14 @@
 
 import { Button } from "@/components/ui/button"
 import WorldMap from "@/components/ui/world-map"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 
 export function Hero() {
+  const router = useRouter()
+  useEffect(() => {
+    router.prefetch("/dashboard")
+  }, [router])
   return (
     <section className="relative overflow-hidden">
       {/* World Map Background */}
@@ -58,7 +64,7 @@ export function Hero() {
               
             </p>
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Button size="lg" className="sm:w-auto w-full">
+              <Button size="lg" className="sm:w-auto w-full" onClick={() => router.push("/dashboard") }>
                 Get Covered
               </Button>
               <Button 

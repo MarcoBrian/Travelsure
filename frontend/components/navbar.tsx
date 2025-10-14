@@ -1,29 +1,13 @@
 "use client"
 import { Button } from "@/components/ui/button"
-import { useAppKit, useAppKitAccount } from "@reown/appkit/react"
+import { ConnectButton } from "@rainbow-me/rainbowkit"
+import { useAccount } from "wagmi"
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
 
 export function Navbar() {
-  const { address, isConnected } = useAppKitAccount()
-  const { open } = useAppKit()
+  const { address, isConnected } = useAccount()
   const router = useRouter()
 
-  // Navigate to dashboard when wallet is connected
-  useEffect(() => {
-    if (isConnected && window.location.pathname === "/") {
-      router.push("/dashboard")
-    }
-  }, [isConnected, router])
-
-  const handleButtonClick = () => {
-    if (isConnected) {
-      router.push("/dashboard")
-    } else {
-      // Open the AppKit modal
-      open()
-    }
-  }
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -66,16 +50,7 @@ export function Navbar() {
         <nav className="hidden md:flex items-center gap-6 text-sm">
         </nav>
         <div className="flex items-center gap-2">
-          {/* Custom button */}
-          {isConnected ? (
-            <div className="flex items-center gap-2">
-              <appkit-button />
-            </div>
-          ) : (
-            <Button onClick={handleButtonClick}>
-              Connect Wallet
-            </Button>
-          )}
+          <ConnectButton />
         </div>
       </div>
     </header>

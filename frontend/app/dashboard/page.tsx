@@ -1,6 +1,6 @@
 "use client"
 
-import { useAppKitAccount } from "@reown/appkit/react"
+import { useAccount } from "wagmi"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { Navbar } from "@/components/navbar"
@@ -8,12 +8,12 @@ import { FlightInsuranceForm } from "@/components/flight-insurance-form"
 import WorldMap from "@/components/ui/world-map"
 
 export default function DashboardPage() {
-  const { address, isConnected } = useAppKitAccount()
+  const { address, isConnected } = useAccount()
   const router = useRouter()
 
   // Redirect to home if not connected
   useEffect(() => {
-    if (!isConnected) {
+    if (isConnected === false) {
       router.push("/")
     }
   }, [isConnected, router])
