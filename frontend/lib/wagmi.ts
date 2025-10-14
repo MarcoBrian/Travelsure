@@ -1,17 +1,38 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { http } from "viem";
+import { connectorsForWallets } from "@rainbow-me/rainbowkit";
+import { createConfig, http } from "wagmi";
 import { sepolia, arbitrumSepolia, polygonMumbai, optimismSepolia, baseSepolia , hardhat } from "wagmi/chains";
+import { 
+  metaMaskWallet,
+  walletConnectWallet,
+  injectedWallet
+} from "@rainbow-me/rainbowkit/wallets";
 
 // Ensure a single instance across HMR in dev
 const globalAny = globalThis as unknown as { __wagmiConfig?: any };
 
+// Create custom wallet connectors
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: 'Recommended',
+      wallets: [
+        metaMaskWallet,
+        walletConnectWallet,
+        injectedWallet,
+      ],
+    },
+  ],
+  {
+    appName: 'Travelsure',
+    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+  }
+);
+
 export const wagmiConfig =
   globalAny.__wagmiConfig ||
-  (globalAny.__wagmiConfig = getDefaultConfig({
-    appName: "Travelsure",
-    // Use ONLY your own WC Cloud projectId from .env to avoid foreign allowlists
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+  (globalAny.__wagmiConfig = createConfig({
     chains: [sepolia, arbitrumSepolia, baseSepolia, hardhat],
+    connectors,
     transports: {
       [sepolia.id]: http(
         (process.env.NEXT_PUBLIC_ALCHEMY_KEY
