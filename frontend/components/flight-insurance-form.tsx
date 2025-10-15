@@ -1,11 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { AIRLINES, getAirlineByIATA, searchAirlines, type Airline } from "@/lib/airlines"
 import { Plane, Calendar, Shield, TrendingUp, AlertCircle, CheckCircle2, Loader2, Clock, MapPin } from "lucide-react"
 import axios from "axios"
+import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt } from "wagmi"
+import { CONTRACTS } from "@/lib/contracts"
+import { erc20Abi } from "@/lib/abi/erc20"
+import { policyManagerAbi } from "@/lib/abi/policyManager"
 
 interface FlightSchedule {
   request: {
@@ -75,6 +79,11 @@ interface QuoteResponse {
 }
 
 export function FlightInsuranceForm() {
+  const { address, chainId } = useAccount()
+  const chainKey = chainId === 31337 ? "localhost" : undefined
+  const policyManager = chainKey ? CONTRACTS[chainKey].policyManager : undefined
+  const pyusd = chainKey ? CONTRACTS[chainKey].pyusd : undefined
+
   const [step, setStep] = useState<"input" | "quote" | "purchase">("input")
   
   // Form inputs
@@ -89,6 +98,39 @@ export function FlightInsuranceForm() {
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // On-chain pricing params
+  const { data: payoutAmount } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "payoutAmount",
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: bigint | undefined }
+  const { data: probBps } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "probBps",
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: number | undefined }
+  const { data: marginBps } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "marginBps",
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: number | undefined }
+
+  const onChainPremium = useMemo(() => {
+    if (!payoutAmount || probBps == null || marginBps == null) return undefined
+    const base = (payoutAmount * BigInt(probBps)) / BigInt(10_000)
+    return (base * BigInt(10_000 + marginBps)) / BigInt(10_000)
+  }, [payoutAmount, probBps, marginBps])
+
+  // Approve and buy
+  const { writeContract, data: txHash } = useWriteContract()
+  const { isLoading: isMinedPending, isSuccess: isMined } = useWaitForTransactionReceipt({ hash: txHash })
+
+  // Simple purchase phase state to orchestrate approve -> buy -> done
+  const [purchasePhase, setPurchasePhase] = useState<"idle" | "approving" | "buying" | "done">("idle")
 
   // Filter airlines based on search
   const filteredAirlines = airlineQuery.length > 0 
@@ -199,6 +241,10 @@ export function FlightInsuranceForm() {
   const formatUSDC = (amount: number) => {
     return (amount / 1_000_000).toFixed(2)
   }
+  const formatTokenBn = (amount?: bigint) => {
+    if (amount == null) return "—"
+    return (Number(amount) / 1_000_000).toFixed(2)
+  }
 
   const formatPercent = (decimal: number) => {
     return (decimal * 100).toFixed(0)
@@ -220,10 +266,57 @@ export function FlightInsuranceForm() {
     return isoString.slice(11, 16)
   }
 
-  const handlePurchase = () => {
-    setStep("purchase")
-    // Here you would integrate with the smart contract to purchase insurance
+  const handlePurchase = async () => {
+    try {
+      if (!address || !policyManager || !pyusd || !onChainPremium || !flightSchedule || !selectedAirline) return
+      const departureIso = flightSchedule.scheduledFlights[0].departureTime
+      const departureTs = Math.floor(new Date(departureIso).getTime() / 1000)
+      const flightHash = (() => {
+        const encoder = new TextEncoder()
+        const bytes = encoder.encode(`${selectedAirline.iata}-${flightNumber}-${departureDate}`)
+        // Simple hash substitute: keccak not in browser. We'll pass bytes32 as 0x0 until we wire hashing util.
+        return "0x" + Buffer.from(bytes).toString("hex").slice(0, 64).padEnd(64, "0") as `0x${string}`
+      })()
+
+      // 1) Approve PYUSD
+      writeContract({
+        abi: erc20Abi,
+        address: pyusd as `0x${string}`,
+        functionName: "approve",
+        args: [policyManager as `0x${string}`, onChainPremium]
+      })
+      setPurchasePhase("approving")
+    } catch (e) {
+      console.error(e)
+    }
   }
+
+  // After approval mined, send buyPolicy
+  useEffect(() => {
+    if (!isMined || !policyManager || !selectedAirline || !flightSchedule || !onChainPremium) return
+    if (purchasePhase === "approving") {
+      const departureIso = flightSchedule.scheduledFlights[0].departureTime
+      const departureTs = Math.floor(new Date(departureIso).getTime() / 1000)
+      const flightHash = (() => {
+        const encoder = new TextEncoder()
+        const bytes = encoder.encode(`${selectedAirline.iata}-${flightNumber}-${departureDate}`)
+        return "0x" + Buffer.from(bytes).toString("hex").slice(0, 64).padEnd(64, "0") as `0x${string}`
+      })()
+      writeContract({
+        abi: policyManagerAbi,
+        address: policyManager as `0x${string}`,
+        functionName: "buyPolicy",
+        args: [{ flightHash, departureTime: BigInt(departureTs) }]
+      })
+      setPurchasePhase("buying")
+      return
+    }
+    if (purchasePhase === "buying") {
+      setPurchasePhase("done")
+      setStep("purchase")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMined])
 
   const resetForm = () => {
     setStep("input")
@@ -431,13 +524,13 @@ export function FlightInsuranceForm() {
 
               {/* Arrival */}
               <div className="text-center flex-1">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-3">
-                  <MapPin className="w-8 h-8 text-purple-600" />
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-3">
+                  <MapPin className="w-8 h-8 text-blue-600" />
                 </div>
                 <p className="text-3xl font-bold text-gray-900 mb-1">
                   {getArrivalAirport()?.city || 'Unknown'}
                 </p>
-                <p className="text-lg text-purple-600 font-bold mb-2">
+                <p className="text-lg text-blue-600 font-bold mb-2">
                   {getArrivalAirport()?.iata || ''}
                 </p>
                 <p className="text-xs text-gray-500 mb-3">
@@ -460,7 +553,7 @@ export function FlightInsuranceForm() {
                 <Shield className="w-5 h-5 text-blue-600" />
                 Coverage Options
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl border-2 border-blue-200 hover:border-blue-400 transition-all hover:shadow-xl hover:-translate-y-1">
                   <div className="absolute top-0 right-0 w-20 h-20 bg-blue-200 rounded-full -mr-10 -mt-10 opacity-50"></div>
                   <div className="relative">
@@ -471,7 +564,7 @@ export function FlightInsuranceForm() {
                       </div>
                     </div>
                     <p className="text-4xl font-bold text-blue-900 mb-2">
-                      ${formatUSDC(quote.payouts.delayed)}
+                      ${formatTokenBn(payoutAmount)}
                     </p>
                     <p className="text-xs text-blue-700 font-semibold">PYUSD Payout</p>
                   </div>
@@ -487,27 +580,13 @@ export function FlightInsuranceForm() {
                       </div>
                     </div>
                     <p className="text-4xl font-bold text-red-900 mb-2">
-                      ${formatUSDC(quote.payouts.cancelled)}
+                      ${formatTokenBn(payoutAmount)}
                     </p>
                     <p className="text-xs text-red-700 font-semibold">PYUSD Payout</p>
                   </div>
                 </div>
 
-                <div className="group relative overflow-hidden bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-2xl border-2 border-purple-200 hover:border-purple-400 transition-all hover:shadow-xl hover:-translate-y-1">
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-purple-200 rounded-full -mr-10 -mt-10 opacity-50"></div>
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold text-purple-900 uppercase tracking-wide">Diversion</h4>
-                      <div className="p-2 bg-purple-200 rounded-lg">
-                        <TrendingUp className="w-5 h-5 text-purple-700" />
-                      </div>
-                    </div>
-                    <p className="text-4xl font-bold text-purple-900 mb-2">
-                      ${formatUSDC(quote.payouts.diverted)}
-                    </p>
-                    <p className="text-xs text-purple-700 font-semibold">PYUSD Payout</p>
-                  </div>
-                </div>
+                {/** Diversion option removed per request **/}
               </div>
             </div>
 
@@ -519,16 +598,24 @@ export function FlightInsuranceForm() {
                 </div>
                 <h4 className="font-bold text-gray-900">Historical Performance</h4>
                 <span className="text-xs text-gray-500 ml-auto bg-white px-3 py-1 rounded-full">
-                  Last 68 flights
+                  {(() => {
+                    const total = (quote.statistics || []).reduce((sum, n) => sum + n, 0)
+                    return `Last ${total} flights`
+                  })()}
                 </span>
               </div>
-              <div className="grid grid-cols-6 gap-3">
-                {['On-time', 'Delayed', 'Cancelled', 'Diverted', 'Unknown', 'Other'].map((label, idx) => (
-                  <div key={idx} className="text-center">
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'On-time', index: 0 },
+                  { label: 'Delayed', index: 1 },
+                  { label: 'Cancelled', index: 2 },
+                  { label: 'Diverted', index: 3 },
+                ].map((item) => (
+                  <div key={item.label} className="text-center">
                     <div className="bg-white p-4 rounded-xl border-2 border-gray-200 hover:border-blue-400 transition-all hover:shadow-md">
-                      <p className="text-3xl font-bold text-gray-900">{quote.statistics[idx]}</p>
+                      <p className="text-3xl font-bold text-gray-900">{quote.statistics[item.index]}</p>
                     </div>
-                    <p className="text-xs text-gray-600 mt-2 font-medium">{label}</p>
+                    <p className="text-xs text-gray-600 mt-2 font-medium">{item.label}</p>
                   </div>
                 ))}
               </div>
@@ -539,15 +626,24 @@ export function FlightInsuranceForm() {
               <Button
                 onClick={handlePurchase}
                 size="lg"
-                className="px-12 py-8 text-2xl font-bold bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900 shadow-2xl hover:shadow-blue-500/50 transition-all hover:scale-105 rounded-2xl text-white"
+                disabled={!onChainPremium}
+                className="px-12 py-8 text-2xl font-bold bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900 shadow-2xl hover:shadow-blue-500/50 transition-all hover:scale-105 rounded-2xl text-white disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Buy Now - ${formatUSDC(quote.premium)} PYUSD
+                {purchasePhase === "approving" && "Approve in wallet..."}
+                {purchasePhase === "buying" && "Purchasing..."}
+                {purchasePhase === "done" && "Purchased"}
+                {purchasePhase === "idle" && (
+                  onChainPremium ? (
+                    <>Buy Now - ${formatTokenBn(onChainPremium)} PYUSD</>
+                  ) : (
+                    <>Buy Now - calculating price...</>
+                  )
+                )}
               </Button>
             </div>
 
             <p className="text-center text-sm text-gray-500 mt-6">
-              Secure payment with <span className="font-bold text-blue-600">PayPal PYUSD</span> on{" "}
-              <span className="font-bold text-blue-600">Base Network</span>
+              Secure payment with <span className="font-bold text-blue-600">PayPal PYUSD</span>
             </p>
           </div>
         </Card>
@@ -581,7 +677,7 @@ export function FlightInsuranceForm() {
               <div className="border-t-2 border-blue-200 pt-4 mt-4">
                 <p className="text-sm text-gray-500 mb-1">Premium Paid</p>
                 <p className="text-3xl font-bold text-blue-900">
-                  ${quote && formatUSDC(quote.premium)} PYUSD
+                  ${formatTokenBn(onChainPremium)} PYUSD
                 </p>
               </div>
             </div>
