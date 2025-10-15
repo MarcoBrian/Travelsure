@@ -2,9 +2,10 @@
 
 import { useAccount } from "wagmi"
 import { useRouter } from "next/navigation"
-import { useEffect, Suspense } from "react"
+import { useEffect, useState } from "react"
 import { Navbar } from "@/components/navbar"
 import { FlightInsuranceForm } from "@/components/flight-insurance-form"
+import { MyInsurance } from "../../components/my-insurance"
 import dynamic from "next/dynamic"
 
 const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
@@ -17,6 +18,7 @@ const WorldMap = dynamic(() => import("@/components/ui/world-map"), {
 export default function DashboardPage() {
   const { address, isConnected } = useAccount()
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
 
   // Redirect to home if not connected
   useEffect(() => {
@@ -24,6 +26,14 @@ export default function DashboardPage() {
       router.push("/")
     }
   }, [isConnected, router])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return null
+  }
 
   if (!isConnected) {
     return (
@@ -34,37 +44,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    }>
-      <main className="min-h-screen relative overflow-hidden">
-        {/* World Map Background */}
-        <div className="absolute inset-0 w-full h-full">
-          <Suspense fallback={
-            <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100" />
-          }>
-            {/* <WorldMap 
-              dots={[
-                {
-                  start: { lat: 40.7128, lng: -74.0060, label: "New York" },
-                  end: { lat: 51.5074, lng: -0.1278, label: "London" }
-                },
-                {
-                  start: { lat: 35.6762, lng: 139.6503, label: "Tokyo" },
-                  end: { lat: 37.7749, lng: -122.4194, label: "San Francisco" }
-                },
-                {
-                  start: { lat: -33.8688, lng: 151.2093, label: "Sydney" },
-                  end: { lat: 48.8566, lng: 2.3522, label: "Paris" }
-                }
-              ]}
-              lineColor="#3b82f6"
-            /> */}
-          </Suspense>
-        </div>
-        
+      <main className="min-h-screen relative overflow-hidden"> 
         {/* Content */}
         <div className="relative z-10">
           <Navbar />
@@ -94,13 +74,53 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Insurance Form */}
-            <FlightInsuranceForm />
+            {/* Tabs */}
+            <TabsContainer />
             
           </div>
         </div>
       </main>
-    </Suspense>
   )
 }
+function TabsContainer() {
+  const [activeTab, setActiveTab] = useState<"buy" | "mine">("buy")
+
+  return (
+    <div>
+      <div className="flex items-center border-b border-gray-200 mb-0">
+        <button
+          type="button"
+          onClick={() => setActiveTab("buy")}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            activeTab === "buy"
+              ? "bg-white text-blue-700 border border-blue-200 border-b-0 -mb-px shadow-sm"
+              : "bg-white/70 text-gray-700 border border-gray-200 hover:text-gray-900 hover:border-gray-300"
+          }`}
+        >
+          Buy insurance
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("mine")}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            activeTab === "mine"
+              ? "bg-white text-blue-700 border border-blue-200 border-b-0 -mb-px shadow-sm"
+              : "bg-white/70 text-gray-700 border border-gray-200 hover:text-gray-900 hover:border-gray-300"
+          }`}
+        >
+          My Insurance
+        </button>
+      </div>
+
+      <div className="bg-white/95 backdrop-blur-md p-6 rounded-t-none rounded-b-xl border border-gray-200 border-t-0 -mt-px shadow-sm">
+        {activeTab === "buy" ? (
+          <FlightInsuranceForm />
+        ) : (
+          <MyInsurance />
+        )}
+      </div>
+    </div>
+  )
+}
+
 
