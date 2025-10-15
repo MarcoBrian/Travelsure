@@ -12,7 +12,7 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
 
   const DECIMALS = 6n;
   const ONE = 10n ** DECIMALS;
-  const DEFAULT_PAYOUT = 500n * ONE;     // set in PolicyManager ctor
+  const DEFAULT_PAYOUT = 500n * ONE;     // set in PolicyManager
   const DEFAULT_PROB_BPS = 3000n;        // 30%
   const DEFAULT_MARGIN_BPS = 500n;       // 5%
   const EXPIRY_WINDOW = 48n * 60n * 60n; // 48h
@@ -181,6 +181,11 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const userBalanceAfter = await pyusd.balanceOf(user.address);
     const managerBalanceAfter = await pyusd.balanceOf(await manager.getAddress());
     expect(userBalanceAfter - userBalanceBefore).to.equal(DEFAULT_PAYOUT);
+    console.log("userBalanceAfter", userBalanceAfter);
+    console.log("userBalanceBefore", userBalanceBefore);
+    console.log("DEFAULT_PAYOUT", DEFAULT_PAYOUT);
+    console.log("managerBalanceAfter", managerBalanceAfter);
+    console.log("managerBalanceBefore", managerBalanceBefore);
     expect(managerBalanceBefore - managerBalanceAfter).to.equal(DEFAULT_PAYOUT);
   });
 
