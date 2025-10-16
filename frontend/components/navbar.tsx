@@ -2,6 +2,7 @@
 import { Button } from "@/components/ui/button"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useAccount, useConnect, useDisconnect } from "wagmi"
+import Image from "next/image"
 
 export function Navbar() {
   const { address, isConnected } = useAccount()
@@ -16,31 +17,15 @@ export function Navbar() {
       <div className="mx-auto max-w-6xl px-4 h-14 md:h-16 flex items-center justify-between">
         <a href="/" className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            {/* Shield Icon */}
-            <div className="relative">
-              <svg 
-                width="32" 
-                height="32" 
-                viewBox="0 0 32 32" 
-                className="text-blue-600"
-                fill="currentColor"
-              >
-                <path d="M16 2L4 6v8c0 8.5 4.5 16 12 18 7.5-2 12-9.5 12-18V6L16 2z"/>
-                {/* Airplane inside shield */}
-                <path 
-                  d="M12 16l4-4 4 4-2 2-2-2-2 2z" 
-                  fill="white"
-                  className="text-white"
-                />
-                {/* Contrails */}
-                <path 
-                  d="M18 12c2 0 4 1 4 3s-2 3-4 3" 
-                  stroke="white" 
-                  strokeWidth="1.5" 
-                  fill="none"
-                  strokeLinecap="round"
-                />
-              </svg>
+            {/* Brand logo */}
+            <div className="relative h-8 w-8">
+              <Image
+                src="/travelsure-logo.png"
+                alt="Travelsure logo"
+                fill
+                sizes="32px"
+                priority
+              />
             </div>
             {/* Text */}
             <div className="flex flex-col">
