@@ -33,7 +33,7 @@ class FlightDetailsRequest(Model):
 
 
 class FlightDetailsResponse(Model):
-    """Response model from flight agent"""
+    """Response model with flight details"""
     flight_number: str
     departure_time: str
     arrival_time: str
@@ -53,8 +53,8 @@ class InsuranceRecommendation(Model):
     estimated_premium: float
 
 
-# Flight status agent address from Agentverse
-FLIGHT_AGENT_ADDRESS = "agent1qvlttvjczdzsrgsu2zza7wl8vus4xjynluu2mfhpf45hsrtk7p4hyzd7ssa"
+# Flight data agent address - OUR CUSTOM AGENT
+FLIGHT_AGENT_ADDRESS = "agent1qfvg6tagsupsz6600te6r6frjqy8uks63y02059m5w6u5aevap5scy6dwj6"
 
 # Initialize the insurance recommendation agent
 insurance_agent = Agent(
@@ -183,11 +183,25 @@ def extract_flight_number(text: str) -> Optional[str]:
     return None
 
 
-def format_recommendation_as_text(recommendation: dict, flight_number: str) -> str:
+def format_recommendation_as_text(recommendation: dict, flight_number: str, flight_data: dict = None) -> str:
     """Format recommendation as readable text"""
     response = f"""🛡️ Insurance Recommendation for Flight {flight_number}
 
-**Recommended:** {recommendation['recommendation'].title()} Insurance
+"""
+    
+    # Add flight details if available
+    if flight_data:
+        airline = flight_data.get('airline', 'Unknown')
+        origin = flight_data.get('origin', 'UNK')
+        destination = flight_data.get('destination', 'UNK')
+        status = flight_data.get('status', 'Unknown')
+        response += f"""**Flight Details:**
+✈️ {airline} | {origin} → {destination}
+📊 Status: {status}
+
+"""
+    
+    response += f"""**Recommended:** {recommendation['recommendation'].title()} Insurance
 **Confidence:** {recommendation['confidence'] * 100:.0f}%
 **Premium:** ${recommendation['estimated_premium']:.2f}
 
@@ -357,12 +371,103 @@ Or type 'help' for more information."""
         ctx.logger.info(f"Received ack from {sender} for {msg.acknowledged_msg_id}")
 
 # ========================================
-# INSURANCE PROTOCOL HANDLERS
+# DIRECT AGENT MESSAGE HANDLERS (for inter-agent communication)
+# ========================================
+
+@insurance_agent.on_message(model=FlightDetailsResponse)
+async def handle_flight_details(ctx: Context, sender: str, msg: FlightDetailsResponse):
+    """Handle flight details from Flight Agent - registered on agent, not protocol"""
+    ctx.logger.info(f"[HANDLER] Received flight details for: {msg.flight_number} from {sender}")
+    
+    try:
+        # Analyze flight
+        flight_data = {
+            'flight_number': msg.flight_number,
+            'departure_time': msg.departure_time,
+            'arrival_time': msg.arrival_time,
+            'airline': msg.airline,
+            'origin': msg.origin,
+            'destination': msg.destination,
+            'status': msg.status
+        }
+        
+        ctx.logger.info(f"Flight data: {flight_data}")
+        
+        analysis = analyze_flight_risk(flight_data)
+        
+        ctx.logger.info(f"Analysis complete: {analysis['recommendation']}")
+        
+        recommendation = InsuranceRecommendation(
+            flight_number=msg.flight_number,
+            recommended_insurance=analysis['recommendation'],
+            confidence_score=analysis['confidence'],
+            reasoning=analysis['reasoning'],
+            risk_factors=analysis['risk_factors'],
+            estimated_premium=analysis['estimated_premium']
+        )
+        
+        # Check if this was from a chat request
+        chat_sender = ctx.storage.get(f"chat_sender_{msg.flight_number}")
+        
+        ctx.logger.info(f"Chat sender for {msg.flight_number}: {chat_sender}")
+        
+        if chat_sender:
+            # Send formatted response via chat
+            response_text = format_recommendation_as_text(analysis, msg.flight_number, flight_data)
+            
+            ctx.logger.info(f"Sending recommendation to {chat_sender}")
+            
+            await ctx.send(
+                chat_sender,
+                ChatMessage(
+                    timestamp=datetime.now(),
+                    msg_id=uuid4(),
+                    content=[TextContent(type="text", text=response_text)]
+                )
+            )
+            # Clear the storage entry by setting to None
+            ctx.storage.set(f"chat_sender_{msg.flight_number}", None)
+            ctx.logger.info(f"Sent chat response for {msg.flight_number}")
+        else:
+            # Handle non-chat request
+            ctx.logger.info(f"No chat sender found, checking for pending request")
+            original_sender = ctx.storage.get(f"pending_{msg.flight_number}")
+            if original_sender:
+                await ctx.send(original_sender, recommendation)
+                # Clear the storage entry by setting to None
+                ctx.storage.set(f"pending_{msg.flight_number}", None)
+                ctx.logger.info(f"Sent insurance recommendation for {msg.flight_number}")
+            else:
+                ctx.logger.warning(f"No sender found for flight {msg.flight_number}")
+            
+    except Exception as e:
+        ctx.logger.error(f"Error processing flight details: {e}")
+        import traceback
+        ctx.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Try to send error message back to chat sender
+        chat_sender = ctx.storage.get(f"chat_sender_{msg.flight_number}")
+        if chat_sender:
+            error_text = f"❌ Sorry, I encountered an error analyzing flight {msg.flight_number}. Please try again."
+            await ctx.send(
+                chat_sender,
+                ChatMessage(
+                    timestamp=datetime.now(),
+                    msg_id=uuid4(),
+                    content=[TextContent(type="text", text=error_text)]
+                )
+            )
+            # Clear the storage entry by setting to None
+            ctx.storage.set(f"chat_sender_{msg.flight_number}", None)
+
+
+# ========================================
+# INSURANCE PROTOCOL HANDLERS (for protocol-based requests)
 # ========================================
 
 @insurance_protocol.on_message(model=FlightDetailsRequest, replies={InsuranceRecommendation})
 async def handle_insurance_request(ctx: Context, sender: str, msg: FlightDetailsRequest):
-    """Handle direct insurance requests"""
+    """Handle direct insurance requests via protocol"""
     ctx.logger.info(f"Insurance request for flight: {msg.flight_number}")
     
     try:
@@ -383,62 +488,6 @@ async def handle_insurance_request(ctx: Context, sender: str, msg: FlightDetails
             estimated_premium=25.0
         )
         await ctx.send(sender, recommendation)
-
-
-@insurance_protocol.on_message(model=FlightDetailsResponse, replies=set())
-async def handle_flight_details(ctx: Context, sender: str, msg: FlightDetailsResponse):
-    """Handle flight details and generate recommendations"""
-    ctx.logger.info(f"Received flight details for: {msg.flight_number}")
-    
-    try:
-        # Analyze flight
-        flight_data = {
-            'flight_number': msg.flight_number,
-            'departure_time': msg.departure_time,
-            'arrival_time': msg.arrival_time,
-            'airline': msg.airline,
-            'origin': msg.origin,
-            'destination': msg.destination,
-            'status': msg.status
-        }
-        
-        analysis = analyze_flight_risk(flight_data)
-        
-        recommendation = InsuranceRecommendation(
-            flight_number=msg.flight_number,
-            recommended_insurance=analysis['recommendation'],
-            confidence_score=analysis['confidence'],
-            reasoning=analysis['reasoning'],
-            risk_factors=analysis['risk_factors'],
-            estimated_premium=analysis['estimated_premium']
-        )
-        
-        # Check if this was from a chat request
-        chat_sender = ctx.storage.get(f"chat_sender_{msg.flight_number}")
-        
-        if chat_sender:
-            # Send formatted response via chat
-            response_text = format_recommendation_as_text(analysis, msg.flight_number)
-            await ctx.send(
-                chat_sender,
-                ChatMessage(
-                    timestamp=datetime.now(),
-                    msg_id=uuid4(),
-                    content=[TextContent(type="text", text=response_text)]
-                )
-            )
-            ctx.storage.delete(f"chat_sender_{msg.flight_number}")
-            ctx.logger.info(f"Sent chat response for {msg.flight_number}")
-        else:
-            # Handle non-chat request
-            original_sender = ctx.storage.get(f"pending_{msg.flight_number}")
-            if original_sender:
-                await ctx.send(original_sender, recommendation)
-                ctx.storage.delete(f"pending_{msg.flight_number}")
-                ctx.logger.info(f"Sent insurance recommendation for {msg.flight_number}")
-            
-    except Exception as e:
-        ctx.logger.error(f"Error processing flight details: {e}")
 
 
 @insurance_agent.on_interval(period=60.0)

@@ -7,7 +7,8 @@ import os
 load_dotenv()
 
 API_TOKEN = os.getenv('AGENTVERSE_API_TOKEN')
-AGENT_ADDRESS = os.getenv('FLIGHT_AGENT_ADDRESS')
+# Use the insurance agent address, not flight agent
+AGENT_ADDRESS = "agent1qwkf3g8u75l6ycw2zjykmxewr546r5hu8vcqdzkyzs37la3kxc73jcs4avv"
 
 headers = {
     'Authorization': f'Bearer {API_TOKEN}',
