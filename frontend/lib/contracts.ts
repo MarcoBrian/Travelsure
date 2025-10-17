@@ -272,7 +272,5 @@ export const PYUSDMockABI = [
   }
 ] as const;
 
-// Contract address - update this after deployment
-// You can find the deployed address in the ignition deployment journal
-// or by running: npx hardhat ignition deploy ignition/modules/PYUSDMock.ts --network hardhat
-export const PYUSDMockAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // Replace with actual deployed address
+// Single source of truth: reference the address from CONTRACTS
+export const PYUSDMockAddress = CONTRACTS.localhost.pyusd;
