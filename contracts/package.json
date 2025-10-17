@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "node-localhost": "hardhat node --network localhost"
+    "node-localhost": "hardhat node --network localhost",
+    "deploy-local": "hardhat ignition deploy ignition/modules/PolicyStack.ts --network localhost",
+    "simulate-fulfill": "hardhat run scripts/simulate-fulfill.ts --network localhost --"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
