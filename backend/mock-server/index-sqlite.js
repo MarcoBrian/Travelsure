@@ -103,6 +103,249 @@ function initializeDatabase() {
   });
 }
 
+// Generate additional sample data
+function generateAdditionalSampleData() {
+  const airlines = [
+    { iata: "AA", icao: "AAL", name: "American Airlines" },
+    { iata: "DL", icao: "DAL", name: "Delta Air Lines" },
+    { iata: "UA", icao: "UAL", name: "United Airlines" },
+    { iata: "EK", icao: "UAE", name: "Emirates" },
+    { iata: "QR", icao: "QTR", name: "Qatar Airways" },
+    { iata: "LH", icao: "DLH", name: "Lufthansa" },
+    { iata: "AF", icao: "AFR", name: "Air France" },
+    { iata: "BA", icao: "BAW", name: "British Airways" },
+    { iata: "SQ", icao: "SIA", name: "Singapore Airlines" },
+    { iata: "JL", icao: "JAL", name: "Japan Airlines" },
+    { iata: "NH", icao: "ANA", name: "All Nippon Airways" },
+    { iata: "KL", icao: "KLM", name: "KLM Royal Dutch Airlines" },
+    { iata: "VS", icao: "VIR", name: "Virgin Atlantic" },
+    { iata: "TK", icao: "THY", name: "Turkish Airlines" },
+    { iata: "CX", icao: "CPA", name: "Cathay Pacific" },
+  ];
+
+  const airports = [
+    {
+      iata: "JFK",
+      icao: "KJFK",
+      name: "John F. Kennedy International Airport",
+      city: "New York",
+      country: "United States",
+      timezone: "America/New_York",
+    },
+    {
+      iata: "LAX",
+      icao: "KLAX",
+      name: "Los Angeles International Airport",
+      city: "Los Angeles",
+      country: "United States",
+      timezone: "America/Los_Angeles",
+    },
+    {
+      iata: "LHR",
+      icao: "EGLL",
+      name: "London Heathrow Airport",
+      city: "London",
+      country: "United Kingdom",
+      timezone: "Europe/London",
+    },
+    {
+      iata: "CDG",
+      icao: "LFPG",
+      name: "Charles de Gaulle Airport",
+      city: "Paris",
+      country: "France",
+      timezone: "Europe/Paris",
+    },
+    {
+      iata: "DXB",
+      icao: "OMDB",
+      name: "Dubai International Airport",
+      city: "Dubai",
+      country: "United Arab Emirates",
+      timezone: "Asia/Dubai",
+    },
+    {
+      iata: "NRT",
+      icao: "RJAA",
+      name: "Narita International Airport",
+      city: "Tokyo",
+      country: "Japan",
+      timezone: "Asia/Tokyo",
+    },
+    {
+      iata: "SIN",
+      icao: "WSSS",
+      name: "Singapore Changi Airport",
+      city: "Singapore",
+      country: "Singapore",
+      timezone: "Asia/Singapore",
+    },
+    {
+      iata: "FRA",
+      icao: "EDDF",
+      name: "Frankfurt Airport",
+      city: "Frankfurt",
+      country: "Germany",
+      timezone: "Europe/Berlin",
+    },
+    {
+      iata: "AMS",
+      icao: "EHAM",
+      name: "Amsterdam Airport Schiphol",
+      city: "Amsterdam",
+      country: "Netherlands",
+      timezone: "Europe/Amsterdam",
+    },
+    {
+      iata: "IST",
+      icao: "LTFM",
+      name: "Istanbul Airport",
+      city: "Istanbul",
+      country: "Turkey",
+      timezone: "Europe/Istanbul",
+    },
+    {
+      iata: "DOH",
+      icao: "OTHH",
+      name: "Hamad International Airport",
+      city: "Doha",
+      country: "Qatar",
+      timezone: "Asia/Qatar",
+    },
+    {
+      iata: "ORD",
+      icao: "KORD",
+      name: "O'Hare International Airport",
+      city: "Chicago",
+      country: "United States",
+      timezone: "America/Chicago",
+    },
+  ];
+
+  const statuses = ["scheduled", "active", "landed", "delayed", "cancelled"];
+  const terminals = ["1", "2", "3", "A", "B", "C", "D", "E"];
+  const gates = [
+    "A1",
+    "A2",
+    "B5",
+    "C10",
+    "D15",
+    "E20",
+    "1",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+  ];
+
+  const sampleFlights = [];
+
+  // Generate 20 flights with future dates
+  for (let i = 0; i < 20; i++) {
+    const airline = airlines[Math.floor(Math.random() * airlines.length)];
+    const departure = airports[Math.floor(Math.random() * airports.length)];
+    let arrival = airports[Math.floor(Math.random() * airports.length)];
+
+    // Ensure departure and arrival are different
+    while (arrival.iata === departure.iata) {
+      arrival = airports[Math.floor(Math.random() * airports.length)];
+    }
+
+    // Generate future dates (next 7 days)
+    const futureDate = moment().add(Math.floor(Math.random() * 7) + 1, "days");
+    const departureTime = moment(futureDate)
+      .hour(Math.floor(Math.random() * 24))
+      .minute(Math.floor(Math.random() * 60));
+    const flightDuration = Math.floor(Math.random() * 12) + 1; // 1-12 hours
+    const arrivalTime = moment(departureTime).add(flightDuration, "hours");
+
+    // Determine if flight is delayed (30% chance)
+    const isDelayed = Math.random() < 0.3;
+    const isCancelled = Math.random() < 0.05; // 5% chance of cancellation
+
+    let departureDelay = 0;
+    let arrivalDelay = 0;
+    let estimatedDeparture = departureTime.toISOString();
+    let estimatedArrival = arrivalTime.toISOString();
+    let actualDeparture = null;
+    let actualArrival = null;
+
+    let flightStatus = "scheduled";
+
+    if (isCancelled) {
+      flightStatus = "cancelled";
+    } else if (isDelayed) {
+      flightStatus = "delayed";
+      departureDelay = Math.floor(Math.random() * 120) + 15; // 15-135 minutes delay
+      arrivalDelay = departureDelay + Math.floor(Math.random() * 30); // Arrival delay usually similar or slightly more
+      estimatedDeparture = moment(departureTime)
+        .add(departureDelay, "minutes")
+        .toISOString();
+      estimatedArrival = moment(arrivalTime)
+        .add(arrivalDelay, "minutes")
+        .toISOString();
+    } else if (Math.random() < 0.2) {
+      flightStatus = statuses[Math.floor(Math.random() * statuses.length)];
+    }
+
+    // If flight is in the past or active, set actual times
+    if (
+      futureDate.isBefore(moment()) ||
+      flightStatus === "active" ||
+      flightStatus === "landed"
+    ) {
+      actualDeparture = estimatedDeparture;
+      if (flightStatus === "landed") {
+        actualArrival = estimatedArrival;
+      }
+    }
+
+    const flightNumber = `${airline.iata}${
+      Math.floor(Math.random() * 9000) + 1000
+    }`;
+
+    const flight = {
+      flight_date: futureDate.format("YYYY-MM-DD"),
+      flight_status: flightStatus,
+      flight_number: flightNumber,
+      airline_iata: airline.iata,
+      airline_icao: airline.icao,
+      airline_name: airline.name,
+      departure_airport_iata: departure.iata,
+      departure_airport_icao: departure.icao,
+      departure_airport_name: departure.name,
+      departure_terminal:
+        terminals[Math.floor(Math.random() * terminals.length)],
+      departure_gate: gates[Math.floor(Math.random() * gates.length)],
+      departure_scheduled: departureTime.toISOString(),
+      departure_estimated: estimatedDeparture,
+      departure_actual: actualDeparture,
+      departure_delay: departureDelay,
+      arrival_airport_iata: arrival.iata,
+      arrival_airport_icao: arrival.icao,
+      arrival_airport_name: arrival.name,
+      arrival_terminal: terminals[Math.floor(Math.random() * terminals.length)],
+      arrival_gate:
+        Math.random() > 0.3
+          ? gates[Math.floor(Math.random() * gates.length)]
+          : null,
+      arrival_baggage:
+        Math.random() > 0.5 ? `${Math.floor(Math.random() * 20) + 1}` : null,
+      arrival_scheduled: arrivalTime.toISOString(),
+      arrival_estimated: estimatedArrival,
+      arrival_actual: actualArrival,
+      arrival_delay: arrivalDelay,
+      is_delayed: isDelayed ? 1 : 0,
+      is_cancelled: isCancelled ? 1 : 0,
+    };
+
+    sampleFlights.push(flight);
+  }
+
+  return sampleFlights;
+}
+
 // Load sample data from JSON file
 function loadSampleDataFromJSON() {
   return new Promise((resolve, reject) => {
@@ -115,7 +358,10 @@ function loadSampleDataFromJSON() {
 
       if (row.count > 0) {
         console.log(`📄 Database already contains ${row.count} flights`);
-        resolve();
+        // Add additional sample data even if we have existing data
+        addAdditionalSampleData()
+          .then(() => resolve())
+          .catch(reject);
         return;
       }
 
@@ -242,6 +488,11 @@ function loadSampleDataFromJSON() {
         Promise.all(insertPromises)
           .then(() => {
             console.log("📄 Sample data loaded successfully!");
+            // Add additional sample data
+            return addAdditionalSampleData();
+          })
+          .then(() => {
+            console.log("📄 Additional sample data added successfully!");
             resolve();
           })
           .catch(reject);
@@ -250,6 +501,110 @@ function loadSampleDataFromJSON() {
         resolve(); // Don't fail if sample data can't be loaded
       }
     });
+  });
+}
+
+// Function to add additional sample data
+function addAdditionalSampleData() {
+  return new Promise((resolve, reject) => {
+    const additionalFlights = generateAdditionalSampleData();
+    console.log(`📄 Adding ${additionalFlights.length} additional flights...`);
+
+    const insertPromises = additionalFlights.map((flight) => {
+      return new Promise((insertResolve, insertReject) => {
+        const insertQuery = `
+          INSERT OR IGNORE INTO flights (
+            flight_date, flight_status, flight_number,
+            airline_iata, airline_icao, airline_name,
+            departure_airport_iata, departure_airport_icao, departure_airport_name,
+            departure_terminal, departure_gate, 
+            departure_scheduled, departure_estimated, departure_actual, departure_delay,
+            arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
+            arrival_terminal, arrival_gate, arrival_baggage,
+            arrival_scheduled, arrival_estimated, arrival_actual, arrival_delay,
+            is_delayed, is_cancelled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const values = [
+          flight.flight_date,
+          flight.flight_status,
+          flight.flight_number,
+          flight.airline_iata,
+          flight.airline_icao,
+          flight.airline_name,
+          flight.departure_airport_iata,
+          flight.departure_airport_icao,
+          flight.departure_airport_name,
+          flight.departure_terminal,
+          flight.departure_gate,
+          flight.departure_scheduled,
+          flight.departure_estimated,
+          flight.departure_actual,
+          flight.departure_delay,
+          flight.arrival_airport_iata,
+          flight.arrival_airport_icao,
+          flight.arrival_airport_name,
+          flight.arrival_terminal,
+          flight.arrival_gate,
+          flight.arrival_baggage,
+          flight.arrival_scheduled,
+          flight.arrival_estimated,
+          flight.arrival_actual,
+          flight.arrival_delay,
+          flight.is_delayed,
+          flight.is_cancelled,
+        ];
+
+        db.run(insertQuery, values, function (err) {
+          if (err) {
+            console.error("Error inserting additional flight:", err);
+            insertReject(err);
+          } else {
+            insertResolve();
+          }
+        });
+
+        // Also insert airlines and airports if they don't exist
+        if (flight.airline_iata) {
+          db.run(
+            `INSERT OR IGNORE INTO airlines (iata, icao, name) VALUES (?, ?, ?)`,
+            [flight.airline_iata, flight.airline_icao, flight.airline_name]
+          );
+        }
+
+        if (flight.departure_airport_iata) {
+          db.run(
+            `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
+            [
+              flight.departure_airport_iata,
+              flight.departure_airport_icao,
+              flight.departure_airport_name,
+              "UTC",
+            ]
+          );
+        }
+
+        if (flight.arrival_airport_iata) {
+          db.run(
+            `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
+            [
+              flight.arrival_airport_iata,
+              flight.arrival_airport_icao,
+              flight.arrival_airport_name,
+              "UTC",
+            ]
+          );
+        }
+      });
+    });
+
+    Promise.all(insertPromises)
+      .then(() => {
+        console.log("📄 Additional sample data inserted successfully!");
+        resolve();
+      })
+      .catch(reject);
   });
 }
 
@@ -630,14 +985,12 @@ app.get("/api/statistics", (req, res) => {
       (err, row) => {
         if (err) {
           console.error("Error getting total flights:", err);
-          res
-            .status(500)
-            .json({
-              error: {
-                code: "database_error",
-                message: "Error fetching statistics",
-              },
-            });
+          res.status(500).json({
+            error: {
+              code: "database_error",
+              message: "Error fetching statistics",
+            },
+          });
           return;
         }
         stats.total_flights_today = row.total;
@@ -649,14 +1002,12 @@ app.get("/api/statistics", (req, res) => {
           (err, row) => {
             if (err) {
               console.error("Error getting on-time flights:", err);
-              res
-                .status(500)
-                .json({
-                  error: {
-                    code: "database_error",
-                    message: "Error fetching statistics",
-                  },
-                });
+              res.status(500).json({
+                error: {
+                  code: "database_error",
+                  message: "Error fetching statistics",
+                },
+              });
               return;
             }
             stats.ontime_flights = row.ontime;
@@ -674,14 +1025,12 @@ app.get("/api/statistics", (req, res) => {
               (err, row) => {
                 if (err) {
                   console.error("Error getting delayed flights:", err);
-                  res
-                    .status(500)
-                    .json({
-                      error: {
-                        code: "database_error",
-                        message: "Error fetching statistics",
-                      },
-                    });
+                  res.status(500).json({
+                    error: {
+                      code: "database_error",
+                      message: "Error fetching statistics",
+                    },
+                  });
                   return;
                 }
                 stats.delayed_flights = row.delayed;
@@ -693,14 +1042,12 @@ app.get("/api/statistics", (req, res) => {
                   (err, row) => {
                     if (err) {
                       console.error("Error getting cancelled flights:", err);
-                      res
-                        .status(500)
-                        .json({
-                          error: {
-                            code: "database_error",
-                            message: "Error fetching statistics",
-                          },
-                        });
+                      res.status(500).json({
+                        error: {
+                          code: "database_error",
+                          message: "Error fetching statistics",
+                        },
+                      });
                       return;
                     }
                     stats.cancelled_flights = row.cancelled;
@@ -712,14 +1059,12 @@ app.get("/api/statistics", (req, res) => {
                       (err, row) => {
                         if (err) {
                           console.error("Error getting average delay:", err);
-                          res
-                            .status(500)
-                            .json({
-                              error: {
-                                code: "database_error",
-                                message: "Error fetching statistics",
-                              },
-                            });
+                          res.status(500).json({
+                            error: {
+                              code: "database_error",
+                              message: "Error fetching statistics",
+                            },
+                          });
                           return;
                         }
                         stats.average_delay_minutes = Math.round(
