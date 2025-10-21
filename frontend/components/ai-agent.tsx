@@ -61,12 +61,16 @@ export function AiAgent() {
               </div>
             </div>
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Button size="lg" className="sm:w-auto w-full">
-                Try AI Agent
-              </Button>
-              <Button size="lg" variant="outline" className="sm:w-auto w-full">
-                Learn More
-              </Button>
+              <a 
+                href="https://chat.agentverse.ai/sessions?agent=agent1qwkf3g8u75l6ycw2zjykmxewr546r5hu8vcqdzkyzs37la3kxc73jcs4avv" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="sm:w-auto w-full"
+              >
+                <Button size="lg" className="w-full">
+                  Try AI Agent
+                </Button>
+              </a>
             </div>
           </div>
 
