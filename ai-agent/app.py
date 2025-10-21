@@ -8,6 +8,7 @@ from uagents import Agent, Context, Model, Protocol
 from datetime import datetime, timedelta
 from uuid import uuid4
 from typing import Optional
+import os
 import json
 import re
 import traceback
