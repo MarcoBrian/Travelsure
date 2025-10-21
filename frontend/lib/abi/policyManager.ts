@@ -6,6 +6,31 @@ export const policyManagerAbi = [
   {
     "type": "function",
     "stateMutability": "view",
+    "name": "getTierConfig",
+    "inputs": [{ "name": "_tier", "type": "uint8" }],
+    "outputs": [
+      { "name": "basePayout", "type": "uint256" },
+      { "name": "premiumMultiplierBps", "type": "uint16" },
+      { "name": "thresholdMinutes", "type": "uint64" },
+      { "name": "probBps", "type": "uint16" },
+      { "name": "marginBps", "type": "uint16" },
+      { "name": "active", "type": "bool" }
+    ]
+  },
+  {
+    "type": "function",
+    "stateMutability": "view",
+    "name": "getTierPricing",
+    "inputs": [{ "name": "_tier", "type": "uint8" }],
+    "outputs": [
+      { "name": "premium", "type": "uint256" },
+      { "name": "payout", "type": "uint256" },
+      { "name": "threshold", "type": "uint64" }
+    ]
+  },
+  {
+    "type": "function",
+    "stateMutability": "view",
     "name": "policyCountOf",
     "inputs": [{ "name": "user", "type": "address" }],
     "outputs": [{ "name": "", "type": "uint256" }]
@@ -33,7 +58,8 @@ export const policyManagerAbi = [
       { "name": "thresholdMinutes", "type": "uint64" },
       { "name": "premium", "type": "uint256" },
       { "name": "payout", "type": "uint256" },
-      { "name": "status", "type": "uint8" }
+      { "name": "status", "type": "uint8" },
+      { "name": "tier", "type": "uint8" }
     ]
   },
   {
@@ -44,7 +70,8 @@ export const policyManagerAbi = [
       { "name": "p", "type": "tuple", "components": [
         { "name": "flightHash", "type": "bytes32" },
         { "name": "departureTime", "type": "uint64" }
-      ]}
+      ]},
+      { "name": "tier", "type": "uint8" }
     ],
     "outputs": [{ "type": "uint256" }]
   }
@@ -59,6 +86,7 @@ export type PolicyStruct = {
   premium: bigint
   payout: bigint
   status: number
+  tier: number
 }
 
 

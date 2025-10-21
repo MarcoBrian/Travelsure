@@ -93,37 +93,95 @@ export function FlightInsuranceForm() {
   const [flightNumber, setFlightNumber] = useState("")
   const [departureDate, setDepartureDate] = useState("")
   
+  // Tier selection
+  const [selectedTier, setSelectedTier] = useState<number | null>(null)
+  
   // Flight data
   const [flightSchedule, setFlightSchedule] = useState<FlightSchedule | null>(null)
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // On-chain pricing params
-  const { data: payoutAmount } = useReadContract({
+  // Tier configurations
+  const { data: basicConfig } = useReadContract({
     abi: policyManagerAbi,
     address: policyManager as `0x${string}` | undefined,
-    functionName: "payoutAmount",
+    functionName: "getTierConfig",
+    args: [0], // Basic tier
     query: { enabled: Boolean(policyManager) }
-  }) as { data: bigint | undefined }
-  const { data: probBps } = useReadContract({
-    abi: policyManagerAbi,
-    address: policyManager as `0x${string}` | undefined,
-    functionName: "probBps",
-    query: { enabled: Boolean(policyManager) }
-  }) as { data: number | undefined }
-  const { data: marginBps } = useReadContract({
-    abi: policyManagerAbi,
-    address: policyManager as `0x${string}` | undefined,
-    functionName: "marginBps",
-    query: { enabled: Boolean(policyManager) }
-  }) as { data: number | undefined }
+  }) as { data: any | undefined }
 
-  const onChainPremium = useMemo(() => {
-    if (!payoutAmount || probBps == null || marginBps == null) return undefined
-    const base = (payoutAmount * BigInt(probBps)) / BigInt(10_000)
-    return (base * BigInt(10_000 + marginBps)) / BigInt(10_000)
-  }, [payoutAmount, probBps, marginBps])
+  
+  const { data: silverConfig } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierConfig",
+    args: [1], // Silver tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: any | undefined }
+  
+  const { data: goldConfig } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierConfig",
+    args: [2], // Gold tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: any | undefined }
+  
+  const { data: platinumConfig } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierConfig",
+    args: [3], // Platinum tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: any | undefined }
+
+
+  // Tier pricing
+  const { data: basicPricing } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierPricing",
+    args: [0], // Basic tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: [bigint, bigint, bigint] | undefined }
+  
+  const { data: silverPricing } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierPricing",
+    args: [1], // Silver tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: [bigint, bigint, bigint] | undefined }
+  
+  const { data: goldPricing } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierPricing",
+    args: [2], // Gold tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: [bigint, bigint, bigint] | undefined }
+  
+  const { data: platinumPricing } = useReadContract({
+    abi: policyManagerAbi,
+    address: policyManager as `0x${string}` | undefined,
+    functionName: "getTierPricing",
+    args: [3], // Platinum tier
+    query: { enabled: Boolean(policyManager) }
+  }) as { data: [bigint, bigint, bigint] | undefined }
+
+  const selectedTierPremium = useMemo(() => {
+    if (selectedTier === null) return undefined
+    
+    const pricingData = [
+      basicPricing,
+      silverPricing, 
+      goldPricing,
+      platinumPricing
+    ][selectedTier]
+    
+    return pricingData?.[0] // First element is premium
+  }, [selectedTier, basicPricing, silverPricing, goldPricing, platinumPricing])
 
   // Approve and buy
   const { writeContract, data: txHash } = useWriteContract()
@@ -268,7 +326,7 @@ export function FlightInsuranceForm() {
 
   const handlePurchase = async () => {
     try {
-      if (!address || !policyManager || !pyusd || !onChainPremium || !flightSchedule || !selectedAirline) return
+      if (!address || !policyManager || !pyusd || !selectedTierPremium || !flightSchedule || !selectedAirline || selectedTier === null) return
       const departureIso = flightSchedule.scheduledFlights[0].departureTime
       const departureTs = Math.floor(new Date(departureIso).getTime() / 1000)
       const flightHash = (() => {
@@ -283,7 +341,7 @@ export function FlightInsuranceForm() {
         abi: erc20Abi,
         address: pyusd as `0x${string}`,
         functionName: "approve",
-        args: [policyManager as `0x${string}`, onChainPremium]
+        args: [policyManager as `0x${string}`, selectedTierPremium]
       })
       setPurchasePhase("approving")
     } catch (e) {
@@ -293,7 +351,7 @@ export function FlightInsuranceForm() {
 
   // After approval mined, send buyPolicy
   useEffect(() => {
-    if (!isMined || !policyManager || !selectedAirline || !flightSchedule || !onChainPremium) return
+    if (!isMined || !policyManager || !selectedAirline || !flightSchedule || !selectedTierPremium || selectedTier === null) return
     if (purchasePhase === "approving") {
       const departureIso = flightSchedule.scheduledFlights[0].departureTime
       const departureTs = Math.floor(new Date(departureIso).getTime() / 1000)
@@ -306,7 +364,7 @@ export function FlightInsuranceForm() {
         abi: policyManagerAbi,
         address: policyManager as `0x${string}`,
         functionName: "buyPolicy",
-        args: [{ flightHash, departureTime: BigInt(departureTs) }]
+        args: [{ flightHash, departureTime: BigInt(departureTs) }, selectedTier]
       })
       setPurchasePhase("buying")
       return
@@ -327,7 +385,65 @@ export function FlightInsuranceForm() {
     setFlightSchedule(null)
     setQuote(null)
     setError(null)
+    setSelectedTier(null)
   }
+
+  // Tier Card Component
+  const TierCard = ({ 
+    tier, 
+    name, 
+    config, 
+    pricing, 
+    colors, 
+    isSelected, 
+    onClick 
+  }: {
+    tier: number
+    name: string
+    config: any
+    pricing: any
+    colors: {
+      bg: string
+      border: string
+      selectedBg: string
+      selectedBorder: string
+      text: string
+      textSecondary: string
+      icon: string
+      iconBg: string
+    }
+    isSelected: boolean
+    onClick: () => void
+  }) => (
+    <div 
+      className={`group relative overflow-hidden p-6 rounded-2xl border-2 transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer ${
+        isSelected 
+          ? `bg-gradient-to-br ${colors.selectedBg} border-${colors.selectedBorder} shadow-lg` 
+          : `bg-gradient-to-br ${colors.bg} border-${colors.border} opacity-60 hover:opacity-80`
+      }`}
+      onClick={onClick}
+    >
+      <div className={`absolute top-0 right-0 w-20 h-20 ${colors.iconBg} rounded-full -mr-10 -mt-10 opacity-50`}></div>
+      <div className="relative">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className={`text-sm font-bold ${colors.text} uppercase tracking-wide`}>{name}</h4>
+          <div className={`p-2 ${colors.iconBg} rounded-lg`}>
+            <Shield className={`w-5 h-5 ${colors.icon}`} />
+          </div>
+        </div>
+        <p className={`text-3xl font-bold ${colors.text} mb-2`}>
+          ${formatTokenBn(pricing?.[1])}
+        </p>
+        <p className={`text-xs ${colors.textSecondary} font-semibold mb-2`}>PYUSD Payout</p>
+        <p className={`text-xs ${colors.textSecondary} mb-1`}>
+          Payout if delay more than {config?.[2] ? Number(config[2]) : '—'} minutes
+        </p>
+        <p className={`text-xs ${colors.textSecondary}`}>
+          Premium: ${formatTokenBn(pricing?.[0])}
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="w-full space-y-6">
@@ -547,46 +663,88 @@ export function FlightInsuranceForm() {
           </div>
 
           <div className="p-8">
-            {/* Coverage Options */}
+            {/* Tier Selection */}
             <div className="mb-8">
               <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Shield className="w-5 h-5 text-blue-600" />
-                Coverage Options
+                Select Your Coverage Tier
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl border-2 border-blue-200 hover:border-blue-400 transition-all hover:shadow-xl hover:-translate-y-1">
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-blue-200 rounded-full -mr-10 -mt-10 opacity-50"></div>
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Delay &gt;45min</h4>
-                      <div className="p-2 bg-blue-200 rounded-lg">
-                        <Clock className="w-5 h-5 text-blue-700" />
-                      </div>
-                    </div>
-                    <p className="text-4xl font-bold text-blue-900 mb-2">
-                      ${formatTokenBn(payoutAmount)}
-                    </p>
-                    <p className="text-xs text-blue-700 font-semibold">PYUSD Payout</p>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <TierCard
+                  tier={0}
+                  name="Basic"
+                  config={basicConfig}
+                  pricing={basicPricing}
+                  colors={{
+                    bg: "from-blue-50 to-blue-100",
+                    border: "border-blue-200",
+                    selectedBg: "from-blue-100 to-blue-200",
+                    selectedBorder: "border-blue-400",
+                    text: "text-blue-900",
+                    textSecondary: "text-blue-600",
+                    icon: "text-blue-700",
+                    iconBg: "bg-blue-300"
+                  }}
+                  isSelected={selectedTier === 0}
+                  onClick={() => setSelectedTier(0)}
+                />
 
-                <div className="group relative overflow-hidden bg-gradient-to-br from-red-50 to-red-100 p-6 rounded-2xl border-2 border-red-200 hover:border-red-400 transition-all hover:shadow-xl hover:-translate-y-1">
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-red-200 rounded-full -mr-10 -mt-10 opacity-50"></div>
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold text-red-900 uppercase tracking-wide">Cancellation</h4>
-                      <div className="p-2 bg-red-200 rounded-lg">
-                        <AlertCircle className="w-5 h-5 text-red-700" />
-                      </div>
-                    </div>
-                    <p className="text-4xl font-bold text-red-900 mb-2">
-                      ${formatTokenBn(payoutAmount)}
-                    </p>
-                    <p className="text-xs text-red-700 font-semibold">PYUSD Payout</p>
-                  </div>
-                </div>
+                <TierCard
+                  tier={1}
+                  name="Silver"
+                  config={silverConfig}
+                  pricing={silverPricing}
+                  colors={{
+                    bg: "from-slate-50 to-slate-100",
+                    border: "border-slate-200",
+                    selectedBg: "from-slate-100 to-slate-200",
+                    selectedBorder: "border-slate-400",
+                    text: "text-slate-900",
+                    textSecondary: "text-slate-600",
+                    icon: "text-slate-700",
+                    iconBg: "bg-slate-300"
+                  }}
+                  isSelected={selectedTier === 1}
+                  onClick={() => setSelectedTier(1)}
+                />
 
-                {/** Diversion option removed per request **/}
+                <TierCard
+                  tier={2}
+                  name="Gold"
+                  config={goldConfig}
+                  pricing={goldPricing}
+                  colors={{
+                    bg: "from-yellow-50 to-yellow-100",
+                    border: "border-yellow-200",
+                    selectedBg: "from-yellow-100 to-yellow-200",
+                    selectedBorder: "border-yellow-400",
+                    text: "text-yellow-900",
+                    textSecondary: "text-yellow-600",
+                    icon: "text-yellow-700",
+                    iconBg: "bg-yellow-300"
+                  }}
+                  isSelected={selectedTier === 2}
+                  onClick={() => setSelectedTier(2)}
+                />
+
+                <TierCard
+                  tier={3}
+                  name="Platinum"
+                  config={platinumConfig}
+                  pricing={platinumPricing}
+                  colors={{
+                    bg: "from-gray-700 to-gray-800",
+                    border: "border-gray-500",
+                    selectedBg: "from-gray-800 to-black",
+                    selectedBorder: "border-gray-600",
+                    text: "text-white",
+                    textSecondary: "text-gray-300",
+                    icon: "text-white",
+                    iconBg: "bg-gray-600"
+                  }}
+                  isSelected={selectedTier === 3}
+                  onClick={() => setSelectedTier(3)}
+                />
               </div>
             </div>
 
@@ -626,15 +784,17 @@ export function FlightInsuranceForm() {
               <Button
                 onClick={handlePurchase}
                 size="lg"
-                disabled={!onChainPremium}
+                disabled={!selectedTierPremium || selectedTier === null}
                 className="px-12 py-8 text-2xl font-bold bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900 shadow-2xl hover:shadow-blue-500/50 transition-all hover:scale-105 rounded-2xl text-white disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {purchasePhase === "approving" && "Approve in wallet..."}
                 {purchasePhase === "buying" && "Purchasing..."}
                 {purchasePhase === "done" && "Purchased"}
                 {purchasePhase === "idle" && (
-                  onChainPremium ? (
-                    <>Buy Now - ${formatTokenBn(onChainPremium)} PYUSD</>
+                  selectedTierPremium && selectedTier !== null ? (
+                    <>Buy Now - ${formatTokenBn(selectedTierPremium)} PYUSD</>
+                  ) : selectedTier === null ? (
+                    <>Select a tier to continue</>
                   ) : (
                     <>Buy Now - calculating price...</>
                   )
@@ -677,7 +837,13 @@ export function FlightInsuranceForm() {
               <div className="border-t-2 border-blue-200 pt-4 mt-4">
                 <p className="text-sm text-gray-500 mb-1">Premium Paid</p>
                 <p className="text-3xl font-bold text-blue-900">
-                  ${formatTokenBn(onChainPremium)} PYUSD
+                  ${formatTokenBn(selectedTierPremium)} PYUSD
+                </p>
+                <p className="text-sm text-gray-600 mt-2">
+                  {selectedTier === 0 && 'Basic Tier'}
+                  {selectedTier === 1 && 'Silver Tier'}
+                  {selectedTier === 2 && 'Gold Tier'}
+                  {selectedTier === 3 && 'Platinum Tier'}
                 </p>
               </div>
             </div>
