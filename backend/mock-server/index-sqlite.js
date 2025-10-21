@@ -609,17 +609,25 @@ function addAdditionalSampleData() {
 }
 
 // Delay simulation function
-function simulateDelayForFlight(flight) {
-  // Only simulate delays for scheduled or active flights that aren't already delayed or cancelled
-  if (
-    flight.flight_status !== "scheduled" &&
-    flight.flight_status !== "active"
-  ) {
-    return flight;
-  }
+function simulateDelayForFlight(flight, forceSimulation = false) {
+  // If forceSimulation is true, simulate on any flight that isn't already delayed
+  // Otherwise, only simulate delays for scheduled or active flights
+  if (!forceSimulation) {
+    if (
+      flight.flight_status !== "scheduled" &&
+      flight.flight_status !== "active"
+    ) {
+      return flight;
+    }
 
-  if (flight.status.isDelayed || flight.status.isCancelled) {
-    return flight;
+    if (flight.status.isDelayed || flight.status.isCancelled) {
+      return flight;
+    }
+  } else {
+    // For forced simulation, only skip if already delayed
+    if (flight.status.isDelayed) {
+      return flight;
+    }
   }
 
   // Create a copy of the flight to avoid mutating the original
@@ -659,6 +667,7 @@ function simulateDelayForFlight(flight) {
   // Update flight status and times
   simulatedFlight.flight_status = "delayed";
   simulatedFlight.status.isDelayed = true;
+  simulatedFlight.status.isCancelled = false; // Override cancellation if it was cancelled
   simulatedFlight.departure.delay = delayMinutes;
   simulatedFlight.arrival.delay = delayMinutes + Math.floor(Math.random() * 15); // Arrival delay usually slightly more
 
@@ -871,15 +880,16 @@ function getFlights(
           let totalDelayMinutes = 0;
 
           flights = flights.map((flight) => {
-            // Only simulate for eligible flights (30% chance)
-            if (
-              Math.random() < 0.3 &&
-              (flight.flight_status === "scheduled" ||
-                flight.flight_status === "active") &&
-              !flight.status.isDelayed &&
-              !flight.status.isCancelled
-            ) {
-              const simulatedFlight = simulateDelayForFlight(flight);
+            // For explicit simulation requests, force simulation on all eligible flights
+            // For general requests, only simulate 30% of eligible flights
+            const shouldSimulate = Math.random() < 0.3 || flights.length === 1; // Always simulate for single flight requests
+
+            if (shouldSimulate && !flight.status.isDelayed) {
+              const forceSimulation = flights.length === 1; // Force for single flight requests
+              const simulatedFlight = simulateDelayForFlight(
+                flight,
+                forceSimulation
+              );
               if (
                 simulatedFlight.simulation &&
                 simulatedFlight.simulation.delayApplied
