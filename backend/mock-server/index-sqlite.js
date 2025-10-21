@@ -4,10 +4,479 @@ const sqlite3 = require("sqlite3").verbose();
 const moment = require("moment");
 const fs = require("fs");
 const path = require("path");
+const swaggerJsdoc = require("swagger-jsdoc");
+const swaggerUi = require("swagger-ui-express");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const DB_PATH = path.join(__dirname, "flights.db");
+
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Travelsure Flight API",
+      version: "1.0.0",
+      description:
+        "A comprehensive flight data API with persistent SQLite storage and delay simulation capabilities",
+      contact: {
+        name: "Travelsure API Support",
+        url: "https://travelsure.site",
+        email: "support@travelsure.site",
+      },
+    },
+    servers: [
+      {
+        url: `http://localhost:${PORT}`,
+        description: "Development server",
+      },
+      {
+        url: "https://api.travelsure.site",
+        description: "Production server",
+      },
+    ],
+    tags: [
+      {
+        name: "Flights",
+        description:
+          "Flight data operations with filtering and delay simulation",
+      },
+      {
+        name: "Airlines",
+        description: "Airline information and data",
+      },
+      {
+        name: "Airports",
+        description: "Airport information with search capabilities",
+      },
+      {
+        name: "Statistics",
+        description: "Flight statistics and analytics",
+      },
+      {
+        name: "Health",
+        description: "API health and status monitoring",
+      },
+    ],
+    components: {
+      schemas: {
+        Flight: {
+          type: "object",
+          properties: {
+            flight_date: {
+              type: "string",
+              format: "date",
+              description: "Date of the flight",
+              example: "2025-10-22",
+            },
+            flight_status: {
+              type: "string",
+              enum: ["scheduled", "active", "landed", "delayed", "cancelled"],
+              description: "Current status of the flight",
+              example: "scheduled",
+            },
+            departure: {
+              type: "object",
+              properties: {
+                airport: {
+                  type: "string",
+                  description: "Departure airport name",
+                  example: "John F. Kennedy International Airport",
+                },
+                timezone: {
+                  type: "string",
+                  description: "Airport timezone",
+                  example: "America/New_York",
+                },
+                iata: {
+                  type: "string",
+                  description: "IATA airport code",
+                  example: "JFK",
+                },
+                icao: {
+                  type: "string",
+                  description: "ICAO airport code",
+                  example: "KJFK",
+                },
+                terminal: {
+                  type: "string",
+                  description: "Departure terminal",
+                  example: "1",
+                },
+                gate: {
+                  type: "string",
+                  description: "Departure gate",
+                  example: "A1",
+                },
+                delay: {
+                  type: "integer",
+                  description: "Departure delay in minutes",
+                  example: 45,
+                },
+                scheduled: {
+                  type: "string",
+                  format: "date-time",
+                  description: "Scheduled departure time",
+                  example: "2025-10-22T14:30:00.000Z",
+                },
+                estimated: {
+                  type: "string",
+                  format: "date-time",
+                  description: "Estimated departure time",
+                  example: "2025-10-22T15:15:00.000Z",
+                },
+                actual: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "Actual departure time",
+                  example: "2025-10-22T15:10:00.000Z",
+                },
+              },
+            },
+            arrival: {
+              type: "object",
+              properties: {
+                airport: {
+                  type: "string",
+                  description: "Arrival airport name",
+                  example: "Los Angeles International Airport",
+                },
+                timezone: {
+                  type: "string",
+                  description: "Airport timezone",
+                  example: "America/Los_Angeles",
+                },
+                iata: {
+                  type: "string",
+                  description: "IATA airport code",
+                  example: "LAX",
+                },
+                icao: {
+                  type: "string",
+                  description: "ICAO airport code",
+                  example: "KLAX",
+                },
+                terminal: {
+                  type: "string",
+                  description: "Arrival terminal",
+                  example: "2",
+                },
+                gate: {
+                  type: "string",
+                  description: "Arrival gate",
+                  example: "B5",
+                },
+                baggage: {
+                  type: "string",
+                  nullable: true,
+                  description: "Baggage claim area",
+                  example: "5",
+                },
+                delay: {
+                  type: "integer",
+                  description: "Arrival delay in minutes",
+                  example: 50,
+                },
+                scheduled: {
+                  type: "string",
+                  format: "date-time",
+                  description: "Scheduled arrival time",
+                  example: "2025-10-22T20:30:00.000Z",
+                },
+                estimated: {
+                  type: "string",
+                  format: "date-time",
+                  description: "Estimated arrival time",
+                  example: "2025-10-22T21:20:00.000Z",
+                },
+                actual: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "Actual arrival time",
+                  example: "2025-10-22T21:15:00.000Z",
+                },
+              },
+            },
+            airline: {
+              type: "object",
+              properties: {
+                name: {
+                  type: "string",
+                  description: "Airline name",
+                  example: "American Airlines",
+                },
+                iata: {
+                  type: "string",
+                  description: "IATA airline code",
+                  example: "AA",
+                },
+                icao: {
+                  type: "string",
+                  description: "ICAO airline code",
+                  example: "AAL",
+                },
+              },
+            },
+            flight: {
+              type: "object",
+              properties: {
+                number: {
+                  type: "string",
+                  description: "Flight number",
+                  example: "AA1234",
+                },
+                iata: {
+                  type: "string",
+                  description: "IATA flight number",
+                  example: "AA1234",
+                },
+                icao: {
+                  type: "string",
+                  description: "ICAO flight number",
+                  example: "AAL1234",
+                },
+              },
+            },
+            status: {
+              type: "object",
+              properties: {
+                isDelayed: {
+                  type: "boolean",
+                  description: "Whether the flight is delayed",
+                  example: true,
+                },
+                isCancelled: {
+                  type: "boolean",
+                  description: "Whether the flight is cancelled",
+                  example: false,
+                },
+              },
+            },
+            simulation: {
+              type: "object",
+              nullable: true,
+              description:
+                "Delay simulation information (only present when simulateDelay=true)",
+              properties: {
+                delayApplied: {
+                  type: "boolean",
+                  description: "Whether delay was applied to this flight",
+                  example: true,
+                },
+                delayMinutes: {
+                  type: "integer",
+                  description: "Number of minutes delayed",
+                  example: 45,
+                },
+                delayReason: {
+                  type: "string",
+                  description: "Reason for the delay",
+                  example: "Air traffic control",
+                },
+                originalStatus: {
+                  type: "string",
+                  description: "Original flight status before simulation",
+                  example: "scheduled",
+                },
+              },
+            },
+          },
+        },
+        FlightsResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/Flight",
+              },
+            },
+            pagination: {
+              type: "object",
+              properties: {
+                limit: {
+                  type: "integer",
+                  description: "Number of results per page",
+                  example: 10,
+                },
+                offset: {
+                  type: "integer",
+                  description: "Number of results to skip",
+                  example: 0,
+                },
+                count: {
+                  type: "integer",
+                  description: "Number of results in current page",
+                  example: 10,
+                },
+                total: {
+                  type: "integer",
+                  description: "Total number of results",
+                  example: 259,
+                },
+              },
+            },
+            simulation: {
+              type: "object",
+              nullable: true,
+              description:
+                "Simulation summary (only present when simulateDelay=true)",
+              properties: {
+                delaySimulated: {
+                  type: "boolean",
+                  description: "Whether delay simulation was requested",
+                  example: true,
+                },
+                delaysApplied: {
+                  type: "integer",
+                  description:
+                    "Number of flights that received simulated delays",
+                  example: 3,
+                },
+                totalFlights: {
+                  type: "integer",
+                  description: "Total number of flights in response",
+                  example: 10,
+                },
+                averageDelayMinutes: {
+                  type: "integer",
+                  description: "Average delay minutes for simulated flights",
+                  example: 67,
+                },
+              },
+            },
+          },
+        },
+        Airline: {
+          type: "object",
+          properties: {
+            id: {
+              type: "integer",
+              description: "Airline ID",
+              example: 1,
+            },
+            iata: {
+              type: "string",
+              description: "IATA airline code",
+              example: "AA",
+            },
+            icao: {
+              type: "string",
+              description: "ICAO airline code",
+              example: "AAL",
+            },
+            name: {
+              type: "string",
+              description: "Airline name",
+              example: "American Airlines",
+            },
+          },
+        },
+        Airport: {
+          type: "object",
+          properties: {
+            id: {
+              type: "integer",
+              description: "Airport ID",
+              example: 1,
+            },
+            iata: {
+              type: "string",
+              description: "IATA airport code",
+              example: "JFK",
+            },
+            icao: {
+              type: "string",
+              description: "ICAO airport code",
+              example: "KJFK",
+            },
+            name: {
+              type: "string",
+              description: "Airport name",
+              example: "John F. Kennedy International Airport",
+            },
+            city: {
+              type: "string",
+              description: "City",
+              example: "New York",
+            },
+            country: {
+              type: "string",
+              description: "Country",
+              example: "United States",
+            },
+            timezone: {
+              type: "string",
+              description: "Timezone",
+              example: "America/New_York",
+            },
+          },
+        },
+        Statistics: {
+          type: "object",
+          properties: {
+            total_flights_today: {
+              type: "integer",
+              description: "Total flights scheduled for today",
+              example: 25,
+            },
+            ontime_flights: {
+              type: "integer",
+              description: "Number of on-time flights today",
+              example: 18,
+            },
+            on_time_percentage: {
+              type: "integer",
+              description: "Percentage of on-time flights",
+              example: 72,
+            },
+            delayed_flights: {
+              type: "integer",
+              description: "Number of delayed flights today",
+              example: 5,
+            },
+            cancelled_flights: {
+              type: "integer",
+              description: "Number of cancelled flights today",
+              example: 2,
+            },
+            average_delay_minutes: {
+              type: "integer",
+              description: "Average delay in minutes for delayed flights",
+              example: 45,
+            },
+          },
+        },
+        Error: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: {
+                  type: "string",
+                  description: "Error code",
+                  example: "flight_not_found",
+                },
+                message: {
+                  type: "string",
+                  description: "Error message",
+                  example: "Flight not found",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  apis: ["./index-sqlite.js"], // Path to the API file
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
 
 // Middleware
 app.use(cors());
@@ -936,6 +1405,208 @@ function getFlights(
 
 // Routes
 
+// Swagger UI route
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(specs, {
+    explorer: true,
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "Travelsure Flight API Documentation",
+  })
+);
+
+/**
+ * @swagger
+ * /api/flights:
+ *   get:
+ *     summary: Get flights with optional filters
+ *     description: Retrieve a list of flights with optional filtering, pagination, and delay simulation capabilities
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: query
+ *         name: departure_iata
+ *         schema:
+ *           type: string
+ *           pattern: '^[A-Z]{3}$'
+ *         description: Filter by departure airport IATA code (3 letters)
+ *         example: JFK
+ *       - in: query
+ *         name: arrival_iata
+ *         schema:
+ *           type: string
+ *           pattern: '^[A-Z]{3}$'
+ *         description: Filter by arrival airport IATA code (3 letters)
+ *         example: LAX
+ *       - in: query
+ *         name: airline_iata
+ *         schema:
+ *           type: string
+ *           pattern: '^[A-Z]{2}$'
+ *         description: Filter by airline IATA code (2 letters)
+ *         example: AA
+ *       - in: query
+ *         name: flight_number
+ *         schema:
+ *           type: string
+ *         description: Filter by specific flight number
+ *         example: AA1234
+ *       - in: query
+ *         name: flight_status
+ *         schema:
+ *           type: string
+ *           enum: [scheduled, active, landed, delayed, cancelled]
+ *         description: Filter by flight status
+ *         example: scheduled
+ *       - in: query
+ *         name: flight_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by flight date (YYYY-MM-DD)
+ *         example: 2025-10-22
+ *       - in: query
+ *         name: is_delayed
+ *         schema:
+ *           type: boolean
+ *         description: Filter by delay status
+ *         example: true
+ *       - in: query
+ *         name: is_cancelled
+ *         schema:
+ *           type: boolean
+ *         description: Filter by cancellation status
+ *         example: false
+ *       - in: query
+ *         name: simulateDelay
+ *         schema:
+ *           type: boolean
+ *         description: |
+ *           **Enable Realistic Delay Simulation**
+ *
+ *           When set to `true`, this parameter applies realistic flight delays to eligible flights:
+ *           - **Light delays**: 15-45 minutes (60% probability) - Air traffic control, late aircraft, passenger boarding
+ *           - **Moderate delays**: 45-90 minutes (30% probability) - Weather conditions, technical maintenance, crew scheduling
+ *           - **Heavy delays**: 90-180 minutes (10% probability) - Severe weather, aircraft maintenance, airport congestion
+ *
+ *           **Simulation Rules:**
+ *           - Only applies to flights with status `scheduled` or `active`
+ *           - For single flight requests: Always applies delay if eligible
+ *           - For multiple flight requests: ~30% of eligible flights get delayed
+ *           - Cancelled flights can be converted to delayed when explicitly requested
+ *           - Updates `flight_status`, `departure.delay`, `arrival.delay`, and estimated times
+ *           - Adds `simulation` object to response with delay details
+ *
+ *           **Use Cases:**
+ *           - Testing insurance claim systems
+ *           - Simulating real-world delay scenarios
+ *           - API integration testing
+ *           - User experience testing with delayed flights
+ *         example: true
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of results to return per page
+ *         example: 20
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of results to skip for pagination
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved flights
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FlightsResponse'
+ *             examples:
+ *               normal_response:
+ *                 summary: Normal flight response (without simulation)
+ *                 value:
+ *                   data:
+ *                     - flight_date: "2025-10-22"
+ *                       flight_status: "scheduled"
+ *                       departure:
+ *                         airport: "John F. Kennedy International Airport"
+ *                         iata: "JFK"
+ *                         delay: 0
+ *                         scheduled: "2025-10-22T14:30:00.000Z"
+ *                         estimated: "2025-10-22T14:30:00.000Z"
+ *                       arrival:
+ *                         airport: "Los Angeles International Airport"
+ *                         iata: "LAX"
+ *                         delay: 0
+ *                         scheduled: "2025-10-22T20:30:00.000Z"
+ *                         estimated: "2025-10-22T20:30:00.000Z"
+ *                       airline:
+ *                         name: "American Airlines"
+ *                         iata: "AA"
+ *                       flight:
+ *                         number: "AA1234"
+ *                       status:
+ *                         isDelayed: false
+ *                         isCancelled: false
+ *                   pagination:
+ *                     limit: 10
+ *                     offset: 0
+ *                     count: 1
+ *                     total: 259
+ *               simulated_response:
+ *                 summary: Response with delay simulation enabled
+ *                 value:
+ *                   data:
+ *                     - flight_date: "2025-10-22"
+ *                       flight_status: "delayed"
+ *                       departure:
+ *                         airport: "John F. Kennedy International Airport"
+ *                         iata: "JFK"
+ *                         delay: 67
+ *                         scheduled: "2025-10-22T14:30:00.000Z"
+ *                         estimated: "2025-10-22T15:37:00.000Z"
+ *                       arrival:
+ *                         airport: "Los Angeles International Airport"
+ *                         iata: "LAX"
+ *                         delay: 72
+ *                         scheduled: "2025-10-22T20:30:00.000Z"
+ *                         estimated: "2025-10-22T21:42:00.000Z"
+ *                       airline:
+ *                         name: "American Airlines"
+ *                         iata: "AA"
+ *                       flight:
+ *                         number: "AA1234"
+ *                       status:
+ *                         isDelayed: true
+ *                         isCancelled: false
+ *                       simulation:
+ *                         delayApplied: true
+ *                         delayMinutes: 67
+ *                         delayReason: "Air traffic control"
+ *                         originalStatus: "scheduled"
+ *                   pagination:
+ *                     limit: 10
+ *                     offset: 0
+ *                     count: 1
+ *                     total: 259
+ *                   simulation:
+ *                     delaySimulated: true
+ *                     delaysApplied: 1
+ *                     totalFlights: 1
+ *                     averageDelayMinutes: 67
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get flights with persistent data
 app.get("/api/flights", async (req, res) => {
   try {
@@ -983,6 +1654,73 @@ app.get("/api/flights", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/flights/{flightNumber}:
+ *   get:
+ *     summary: Get specific flight by flight number
+ *     description: Retrieve detailed information for a specific flight by its flight number, with optional date filtering and delay simulation
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: path
+ *         name: flightNumber
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Flight number (e.g., AA1234, DL7008)
+ *         example: AA1234
+ *       - in: query
+ *         name: flight_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Specific flight date (YYYY-MM-DD)
+ *         example: 2025-10-22
+ *       - in: query
+ *         name: simulateDelay
+ *         schema:
+ *           type: boolean
+ *         description: |
+ *           **Enable Realistic Delay Simulation for Specific Flight**
+ *
+ *           When set to `true`, this parameter forces delay simulation on the requested flight:
+ *           - **Always applies delay** if flight is eligible (not already delayed)
+ *           - **Converts cancelled flights** to delayed status when explicitly requested
+ *           - **Realistic delay ranges**: 15-45min (light), 45-90min (moderate), 90-180min (heavy)
+ *           - **Includes delay reason**: Air traffic, weather, maintenance, etc.
+ *           - **Updates all relevant fields**: status, estimated times, delay minutes
+ *
+ *           Perfect for testing specific flight scenarios in insurance systems.
+ *         example: true
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved flight information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Flight'
+ *                 simulation:
+ *                   type: object
+ *                   nullable: true
+ *                   description: Simulation information (only present when simulateDelay=true)
+ *       404:
+ *         description: Flight not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get specific flight by flight number and date
 app.get("/api/flights/:flightNumber", async (req, res) => {
   try {
@@ -1019,6 +1757,61 @@ app.get("/api/flights/:flightNumber", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/airlines:
+ *   get:
+ *     summary: Get airlines
+ *     description: Retrieve a list of airlines with pagination
+ *     tags: [Airlines]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of results to return per page
+ *         example: 20
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of results to skip for pagination
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved airlines
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     count:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Airline'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get airlines
 app.get("/api/airlines", (req, res) => {
   const { limit = 10, offset = 0 } = req.query;
@@ -1061,6 +1854,67 @@ app.get("/api/airlines", (req, res) => {
   );
 });
 
+/**
+ * @swagger
+ * /api/airports:
+ *   get:
+ *     summary: Get airports
+ *     description: Retrieve a list of airports with optional search functionality and pagination
+ *     tags: [Airports]
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search airports by name, city, or IATA code
+ *         example: New York
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of results to return per page
+ *         example: 20
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of results to skip for pagination
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved airports
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     count:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Airport'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get airports
 app.get("/api/airports", (req, res) => {
   const { limit = 10, offset = 0, search } = req.query;
@@ -1117,6 +1971,30 @@ app.get("/api/airports", (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /api/statistics:
+ *   get:
+ *     summary: Get flight statistics
+ *     description: Retrieve comprehensive flight statistics for today including delays, cancellations, and on-time performance
+ *     tags: [Statistics]
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved flight statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/Statistics'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get flight statistics
 app.get("/api/statistics", (req, res) => {
   const today = moment().format("YYYY-MM-DD");
@@ -1231,6 +2109,39 @@ app.get("/api/statistics", (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check
+ *     description: Check the health status of the API server and database connection
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   description: Health status
+ *                   example: healthy
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Current timestamp
+ *                   example: 2025-10-21T12:00:00.000Z
+ *                 uptime:
+ *                   type: number
+ *                   description: Server uptime in seconds
+ *                   example: 3600.5
+ *                 database:
+ *                   type: string
+ *                   description: Database connection status
+ *                   example: connected
+ */
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
@@ -1280,7 +2191,13 @@ async function startServer() {
       console.log(`   GET /api/statistics - Get flight statistics`);
       console.log(`   GET /health - Health check`);
 
-      console.log(`\n📖 Example usage:`);
+      console.log(`\n� API Documentation:`);
+      console.log(`   Swagger UI: http://localhost:${PORT}/api-docs`);
+      console.log(
+        `   Interactive API explorer with detailed schemas and examples`
+      );
+
+      console.log(`\n�📖 Example usage:`);
       console.log(`\n🛫 FLIGHTS API:`);
       console.log(`   Get all flights (paginated):`);
       console.log(`   → http://localhost:${PORT}/api/flights`);
