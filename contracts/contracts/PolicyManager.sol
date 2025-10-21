@@ -22,6 +22,7 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
 
     // ---------------- Types ----------------
     enum FlightStatus { None, Active, Claimable, PaidOut, Expired }
+    enum PolicyTier { Basic, Silver, Gold, Platinum }
 
     struct Policy {
         address holder;
@@ -32,6 +33,16 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         uint256 premium;
         uint256 payout;
         FlightStatus  status;
+        PolicyTier tier;
+    }
+
+    struct TierConfig {
+        uint256 basePayout;        // Base payout amount for this tier
+        uint16 premiumMultiplierBps; // Premium multiplier in basis points (e.g., 10000 = 1x, 12000 = 1.2x)
+        uint64 thresholdMinutes;   // Delay threshold for this tier
+        uint16 probBps;            // Event probability in basis points for this tier
+        uint16 marginBps;          // Pricing margin in basis points for this tier
+        bool active;               // Whether this tier is available
     }
 
     struct PurchaseParams {
@@ -62,6 +73,9 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     // Map requestId => policyId so we know which policy to settle in fulfill
     mapping(bytes32 => uint256) public requestToPolicy;
 
+    // Tier configurations
+    mapping(PolicyTier => TierConfig) public tierConfigs;
+
 
     // ----Utils---
     function _key(address user, bytes32 flightHash) internal pure returns (bytes32) {
@@ -72,13 +86,52 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         Policy storage pol = policies[id];
         hasActivePolicy[_key(pol.holder, pol.flightHash)] = false;
     }
+
+    function _initializeTierConfigs() internal {
+        uint256 baseUnit = 10 ** uint256(pyusdDecimals);
+        
+        // Basic tier: $100 payout, 1x premium, 4 hours threshold, standard risk
+        tierConfigs[PolicyTier.Basic] = TierConfig({
+            basePayout: 100 * baseUnit,
+            premiumMultiplierBps: 10000, // 1x
+            thresholdMinutes: 240, // 4 hours
+            probBps: 3000, // 30% base probability
+            marginBps: 500, // 5% margin
+            active: true
+        });
+        
+        // Silver tier: $250 payout, 1.2x premium, 3 hours threshold, slightly higher risk
+        tierConfigs[PolicyTier.Silver] = TierConfig({
+            basePayout: 250 * baseUnit,
+            premiumMultiplierBps: 12000, // 1.2x
+            thresholdMinutes: 180, // 3 hours
+            probBps: 3200, // 32% probability (higher risk)
+            marginBps: 600, // 6% margin
+            active: true
+        });
+        
+        // Gold tier: $500 payout, 1.5x premium, 2 hours threshold, higher risk
+        tierConfigs[PolicyTier.Gold] = TierConfig({
+            basePayout: 500 * baseUnit,
+            premiumMultiplierBps: 15000, // 1.5x
+            thresholdMinutes: 120, // 2 hours
+            probBps: 3500, // 35% probability (higher risk)
+            marginBps: 700, // 7% margin
+            active: true
+        });
+        
+        // Platinum tier: $1000 payout, 1.5x premium, 1 hour threshold, highest risk
+        tierConfigs[PolicyTier.Platinum] = TierConfig({
+            basePayout: 1000 * baseUnit,
+            premiumMultiplierBps: 15000, // 1.5x
+            thresholdMinutes: 60, // 1 hour
+            probBps: 4000, // 40% probability (highest risk)
+            marginBps: 800, // 8% margin
+            active: true
+        });
+    }
     
 
-    // ---------------- Pricing (owner-controlled) ----------------
-    uint16 public probBps;      // base event probability in basis points 30%
-    uint16 public marginBps;    // pricing margin in basis points 5% 
-    uint256 public payoutAmount; // fixed payout amount for all policies (can be adjusted by owner)
-    uint64 public THRESHOLD_MINUTES = 240; // 4 hours
 
     constructor(address _router, address _pyusd)
         FunctionsClient(_router)
@@ -88,25 +141,22 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         pyusdDecimals = IERC20Metadata(_pyusd).decimals();
         subscriptionId = 0; // mock subscriptionId
         donID = bytes32(0); // mock donID
-        // set a sane default payout amount: 500 units in token's smallest denomination
-        payoutAmount = 500 * (10 ** uint256(pyusdDecimals));
-        marginBps = 500;
-        probBps = 3000;
 
+        // Initialize tier configurations
+        _initializeTierConfigs();
     }
 
     // ---------------- Events ----------------
-    event PolicyPurchased(uint256 indexed id, address indexed holder, bytes32 flightHash, uint256 premium, uint256 payout);
+    event PolicyPurchased(uint256 indexed id, address indexed holder, bytes32 flightHash, uint256 premium, uint256 payout, PolicyTier tier);
     event OracleRequested(uint256 indexed policyId, bytes32 requestId);
     event OracleResult(uint256 indexed policyId, bool occurred, uint64 delayMinutes);
     event PolicyPaid(uint256 indexed id, address indexed to, uint256 amount);
     event PolicyExpired(uint256 indexed id);
 
-    event PricingUpdated(uint16 probBps, uint16 marginBps, uint256 payoutAmount);
     event ExpiryWindowUpdated(uint64 expiryWindow);
-    event ThresholdMinutesUpdated(uint64 thresholdMinutes);
     event DonIDUpdated(bytes32 donID);
     event SubscriptionIDUpdated(uint64 subscriptionId);
+    event TierConfigUpdated(PolicyTier indexed tier, uint256 basePayout, uint16 premiumMultiplierBps, uint64 thresholdMinutes, uint16 probBps, uint16 marginBps, bool active);
 
     // ---------------- Admin to set Chainlink Functions config----------------
     function setFunctionsConfig(uint64 _subId, uint32 _gasLimit, bytes32 _donID) external onlyOwner {
@@ -117,27 +167,11 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
 
     // ---------------- Admin functions to set Insurance Parameters ----------------
 
-    function setPricing(uint16 _probBps, uint16 _marginBps, uint256 _payoutAmount) external onlyOwner {
-        require(_probBps > 0 && _probBps <= 10_000, "probBps out of range");
-        require(_marginBps > 0 && _marginBps <= 10_000, "marginBps out of range");
-        require(_payoutAmount > 0, "payout must be > 0");
-        probBps = _probBps;
-        marginBps = _marginBps;
-        payoutAmount = _payoutAmount;
-        emit PricingUpdated(_probBps, _marginBps, _payoutAmount);
-    }
-
     function setExpiryWindow(uint64 _expiryWindow) external onlyOwner {
         // Require at least 1 hour and at most 14 days to prevent misconfiguration
         require(_expiryWindow >= 1 hours && _expiryWindow <= 14 days, "expiryWindow out of range");
         expiryWindow = _expiryWindow;
         emit ExpiryWindowUpdated(_expiryWindow);
-    }
-
-    function setThresholdMinutes(uint64 _thresholdMinutes) external onlyOwner {
-        require(_thresholdMinutes >= 30 && _thresholdMinutes <= 360, "thresholdMinutes out of range"); // max 6 hours
-        THRESHOLD_MINUTES = _thresholdMinutes;
-        emit ThresholdMinutesUpdated(_thresholdMinutes);
     }
 
     // ---- Chainlink Functions config ----
@@ -151,20 +185,64 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         emit DonIDUpdated(_donID);
     }
 
+    // ---------------- Tier Management Functions ----------------
+    function setTierConfig(
+        PolicyTier _tier,
+        uint256 _basePayout,
+        uint16 _premiumMultiplierBps,
+        uint64 _thresholdMinutes,
+        uint16 _probBps,
+        uint16 _marginBps,
+        bool _active
+    ) external onlyOwner {
+        require(_basePayout > 0, "Base payout must be > 0");
+        require(_premiumMultiplierBps > 0 && _premiumMultiplierBps <= 50000, "Premium multiplier out of range"); // max 5x
+        require(_thresholdMinutes >= 30 && _thresholdMinutes <= 1440, "Threshold out of range"); // max 24 hours
+        require(_probBps > 0 && _probBps <= 10_000, "probBps out of range");
+        require(_marginBps > 0 && _marginBps <= 10_000, "marginBps out of range");
+        
+        tierConfigs[_tier] = TierConfig({
+            basePayout: _basePayout,
+            premiumMultiplierBps: _premiumMultiplierBps,
+            thresholdMinutes: _thresholdMinutes,
+            probBps: _probBps,
+            marginBps: _marginBps,
+            active: _active
+        });
+        
+        emit TierConfigUpdated(_tier, _basePayout, _premiumMultiplierBps, _thresholdMinutes, _probBps, _marginBps, _active);
+    }
+
+    function getTierConfig(PolicyTier _tier) external view returns (TierConfig memory) {
+        return tierConfigs[_tier];
+    }
+
+    function getTierPricing(PolicyTier _tier) external view returns (uint256 premium, uint256 payout, uint64 threshold) {
+        TierConfig memory config = tierConfigs[_tier];
+        require(config.active, "Tier not active");
+        
+        uint256 basePremium = PricingLib.quote(config.basePayout, config.probBps, config.marginBps);
+        premium = (basePremium * config.premiumMultiplierBps) / 10000;
+        payout = config.basePayout;
+        threshold = config.thresholdMinutes;
+    }
+
 
     // ---------------- Buy ----------------
-    function buyPolicy(PurchaseParams calldata p) external nonReentrant returns (uint256 policyId) {
+    function buyPolicy(PurchaseParams calldata p, PolicyTier tier) external nonReentrant returns (uint256 policyId) {
         bytes32 key = _key(msg.sender, p.flightHash);
         require(!hasActivePolicy[key], "User already insured for this flight");
         uint64 expiryTs = p.departureTime + expiryWindow;
         require(expiryTs > block.timestamp && expiryTs > p.departureTime, "Invalid times");
-        require(payoutAmount > 0, "Pricing not set");
-        require(probBps > 0, "Pricing not set");
-        require(THRESHOLD_MINUTES > 0, "Threshold not set");
-        require(marginBps > 0, "Margin not set");
+        
+        // Get tier configuration
+        TierConfig memory config = tierConfigs[tier];
+        require(config.active, "Tier not active");
 
-    
-        uint256 premium = PricingLib.quote(payoutAmount, probBps, marginBps);
+        // Calculate tier-specific pricing using tier's own risk parameters
+        uint256 basePremium = PricingLib.quote(config.basePayout, config.probBps, config.marginBps);
+        uint256 premium = (basePremium * config.premiumMultiplierBps) / 10000;
+        
         PYUSD.safeTransferFrom(msg.sender, address(this), premium);
 
         policyId = ++nextPolicyId;
@@ -173,15 +251,16 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
             flightHash: p.flightHash,
             departureTime: p.departureTime,
             expiry: expiryTs,
-            thresholdMinutes: THRESHOLD_MINUTES,
+            thresholdMinutes: config.thresholdMinutes,
             premium: premium,
-            payout: payoutAmount,
-            status: FlightStatus.Active
+            payout: config.basePayout,
+            status: FlightStatus.Active,
+            tier: tier
         });
         _ownedPolicies[msg.sender].push(policyId);
         hasActivePolicy[key] = true;
 
-        emit PolicyPurchased(policyId, msg.sender, p.flightHash, premium, payoutAmount);
+        emit PolicyPurchased(policyId, msg.sender, p.flightHash, premium, config.basePayout, tier);
     }
 
     // ---------------- Chainlink Functions: SEND ----------------
