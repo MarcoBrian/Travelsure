@@ -608,8 +608,89 @@ function addAdditionalSampleData() {
   });
 }
 
+// Delay simulation function
+function simulateDelayForFlight(flight) {
+  // Only simulate delays for scheduled or active flights that aren't already delayed or cancelled
+  if (
+    flight.flight_status !== "scheduled" &&
+    flight.flight_status !== "active"
+  ) {
+    return flight;
+  }
+
+  if (flight.status.isDelayed || flight.status.isCancelled) {
+    return flight;
+  }
+
+  // Create a copy of the flight to avoid mutating the original
+  const simulatedFlight = JSON.parse(JSON.stringify(flight));
+
+  // Generate realistic delay (60% light, 30% moderate, 10% heavy)
+  const random = Math.random();
+  let delayMinutes;
+  let delayReason;
+
+  if (random < 0.6) {
+    // Light delay: 15-45 minutes
+    delayMinutes = Math.floor(Math.random() * 30) + 15;
+    delayReason = [
+      "Air traffic control",
+      "Late arriving aircraft",
+      "Passenger boarding",
+    ][Math.floor(Math.random() * 3)];
+  } else if (random < 0.9) {
+    // Moderate delay: 45-90 minutes
+    delayMinutes = Math.floor(Math.random() * 45) + 45;
+    delayReason = [
+      "Weather conditions",
+      "Technical maintenance",
+      "Crew scheduling",
+    ][Math.floor(Math.random() * 3)];
+  } else {
+    // Heavy delay: 90-180 minutes
+    delayMinutes = Math.floor(Math.random() * 90) + 90;
+    delayReason = [
+      "Severe weather",
+      "Aircraft maintenance",
+      "Airport congestion",
+    ][Math.floor(Math.random() * 3)];
+  }
+
+  // Update flight status and times
+  simulatedFlight.flight_status = "delayed";
+  simulatedFlight.status.isDelayed = true;
+  simulatedFlight.departure.delay = delayMinutes;
+  simulatedFlight.arrival.delay = delayMinutes + Math.floor(Math.random() * 15); // Arrival delay usually slightly more
+
+  // Update estimated times
+  const originalDeparture = moment(simulatedFlight.departure.scheduled);
+  const originalArrival = moment(simulatedFlight.arrival.scheduled);
+
+  simulatedFlight.departure.estimated = originalDeparture
+    .add(delayMinutes, "minutes")
+    .toISOString();
+  simulatedFlight.arrival.estimated = originalArrival
+    .add(simulatedFlight.arrival.delay, "minutes")
+    .toISOString();
+
+  // Add delay reason
+  simulatedFlight.simulation = {
+    delayApplied: true,
+    delayMinutes: delayMinutes,
+    delayReason: delayReason,
+    originalStatus: flight.flight_status,
+  };
+
+  return simulatedFlight;
+}
+
 // Helper function to get flights with filters
-function getFlights(filters = {}, limit = 10, offset = 0) {
+function getFlights(
+  filters = {},
+  limit = 10,
+  offset = 0,
+  simulateDelay = false
+) {
   return new Promise((resolve, reject) => {
     let query = `
       SELECT 
@@ -737,7 +818,7 @@ function getFlights(filters = {}, limit = 10, offset = 0) {
         }
 
         // Format flights data
-        const flights = rows.map((row) => ({
+        let flights = rows.map((row) => ({
           flight_date: row.flight_date,
           flight_status: row.flight_status,
           departure: {
@@ -783,7 +864,46 @@ function getFlights(filters = {}, limit = 10, offset = 0) {
           },
         }));
 
-        resolve({
+        // Apply delay simulation if requested
+        let simulationInfo = null;
+        if (simulateDelay) {
+          let delaysApplied = 0;
+          let totalDelayMinutes = 0;
+
+          flights = flights.map((flight) => {
+            // Only simulate for eligible flights (30% chance)
+            if (
+              Math.random() < 0.3 &&
+              (flight.flight_status === "scheduled" ||
+                flight.flight_status === "active") &&
+              !flight.status.isDelayed &&
+              !flight.status.isCancelled
+            ) {
+              const simulatedFlight = simulateDelayForFlight(flight);
+              if (
+                simulatedFlight.simulation &&
+                simulatedFlight.simulation.delayApplied
+              ) {
+                delaysApplied++;
+                totalDelayMinutes += simulatedFlight.simulation.delayMinutes;
+              }
+              return simulatedFlight;
+            }
+            return flight;
+          });
+
+          simulationInfo = {
+            delaySimulated: true,
+            delaysApplied: delaysApplied,
+            totalFlights: flights.length,
+            averageDelayMinutes:
+              delaysApplied > 0
+                ? Math.round(totalDelayMinutes / delaysApplied)
+                : 0,
+          };
+        }
+
+        const result = {
           data: flights,
           pagination: {
             limit: parseInt(limit),
@@ -791,7 +911,14 @@ function getFlights(filters = {}, limit = 10, offset = 0) {
             count: flights.length,
             total: countRow.total,
           },
-        });
+        };
+
+        // Add simulation info if delays were simulated
+        if (simulationInfo) {
+          result.simulation = simulationInfo;
+        }
+
+        resolve(result);
       });
     });
   });
@@ -811,6 +938,7 @@ app.get("/api/flights", async (req, res) => {
       flight_date,
       is_delayed,
       is_cancelled,
+      simulateDelay,
       limit = 10,
       offset = 0,
     } = req.query;
@@ -826,7 +954,13 @@ app.get("/api/flights", async (req, res) => {
     if (is_cancelled !== undefined)
       filters.is_cancelled = is_cancelled === "true";
 
-    const result = await getFlights(filters, parseInt(limit), parseInt(offset));
+    const shouldSimulateDelay = simulateDelay === "true";
+    const result = await getFlights(
+      filters,
+      parseInt(limit),
+      parseInt(offset),
+      shouldSimulateDelay
+    );
     res.json(result);
   } catch (error) {
     console.error("Error fetching flights:", error);
@@ -843,16 +977,18 @@ app.get("/api/flights", async (req, res) => {
 app.get("/api/flights/:flightNumber", async (req, res) => {
   try {
     const { flightNumber } = req.params;
-    const { flight_date } = req.query;
+    const { flight_date, simulateDelay } = req.query;
 
     const filters = { flight_number: flightNumber };
     if (flight_date) filters.flight_date = flight_date;
 
-    const result = await getFlights(filters, 1, 0);
+    const shouldSimulateDelay = simulateDelay === "true";
+    const result = await getFlights(filters, 1, 0, shouldSimulateDelay);
 
     if (result.data.length > 0) {
       res.json({
         data: result.data,
+        simulation: result.simulation || null,
       });
     } else {
       res.status(404).json({
@@ -1133,16 +1269,173 @@ async function startServer() {
       console.log(`   GET /api/airports - Get airports`);
       console.log(`   GET /api/statistics - Get flight statistics`);
       console.log(`   GET /health - Health check`);
+
       console.log(`\n📖 Example usage:`);
+      console.log(`\n🛫 FLIGHTS API:`);
+      console.log(`   Get all flights (paginated):`);
+      console.log(`   → http://localhost:${PORT}/api/flights`);
       console.log(
-        `   http://localhost:${PORT}/api/flights?departure_iata=MEL&limit=5`
+        `   → http://localhost:${PORT}/api/flights?limit=20&offset=10`
+      );
+
+      console.log(`\n   Filter by departure/arrival airports:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?departure_iata=JFK`
+      );
+      console.log(`   → http://localhost:${PORT}/api/flights?arrival_iata=LAX`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?departure_iata=LHR&arrival_iata=CDG`
+      );
+
+      console.log(`\n   Filter by airline:`);
+      console.log(`   → http://localhost:${PORT}/api/flights?airline_iata=AA`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?airline_iata=UA&limit=5`
+      );
+
+      console.log(`\n   Filter by flight status:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?flight_status=delayed`
       );
       console.log(
-        `   http://localhost:${PORT}/api/flights?is_delayed=true&limit=10`
+        `   → http://localhost:${PORT}/api/flights?flight_status=scheduled`
       );
-      console.log(`   http://localhost:${PORT}/api/flights?is_cancelled=true`);
       console.log(
-        `   http://localhost:${PORT}/api/flights/CX178?flight_date=2025-10-17`
+        `   → http://localhost:${PORT}/api/flights?flight_status=cancelled`
+      );
+
+      console.log(`\n   Filter by delay/cancellation status:`);
+      console.log(`   → http://localhost:${PORT}/api/flights?is_delayed=true`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?is_cancelled=true`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?is_delayed=false&limit=10`
+      );
+
+      console.log(`\n   Filter by date:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?flight_date=2025-10-22`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?flight_date=2025-10-23&is_delayed=true`
+      );
+
+      console.log(`\n   Combined filters:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?departure_iata=JFK&airline_iata=AA&is_delayed=true`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?arrival_iata=DXB&flight_status=scheduled&limit=15`
+      );
+
+      console.log(`\n🎭 DELAY SIMULATION:`);
+      console.log(`   Simulate realistic delays on scheduled flights:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?simulateDelay=true`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?simulateDelay=true&limit=20`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?departure_iata=JFK&simulateDelay=true`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?airline_iata=AA&simulateDelay=true&limit=10`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights?flight_status=scheduled&simulateDelay=true`
+      );
+
+      console.log(`\n🔍 SPECIFIC FLIGHT API:`);
+      console.log(`   Get flight by number:`);
+      console.log(`   → http://localhost:${PORT}/api/flights/AA1234`);
+      console.log(`   → http://localhost:${PORT}/api/flights/UA5678`);
+      console.log(`   → http://localhost:${PORT}/api/flights/EK2468`);
+
+      console.log(`\n   Get flight by number and date:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights/AA1234?flight_date=2025-10-22`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights/DL9876?flight_date=2025-10-23`
+      );
+
+      console.log(`\n   Simulate delay for specific flight:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/flights/AA1234?simulateDelay=true`
+      );
+      console.log(
+        `   → http://localhost:${PORT}/api/flights/UA5678?flight_date=2025-10-22&simulateDelay=true`
+      );
+
+      console.log(`\n✈️ AIRLINES API:`);
+      console.log(`   Get all airlines:`);
+      console.log(`   → http://localhost:${PORT}/api/airlines`);
+      console.log(
+        `   → http://localhost:${PORT}/api/airlines?limit=20&offset=5`
+      );
+
+      console.log(`\n🏢 AIRPORTS API:`);
+      console.log(`   Get all airports:`);
+      console.log(`   → http://localhost:${PORT}/api/airports`);
+      console.log(`   → http://localhost:${PORT}/api/airports?limit=15`);
+
+      console.log(`\n   Search airports:`);
+      console.log(
+        `   → http://localhost:${PORT}/api/airports?search=New%20York`
+      );
+      console.log(`   → http://localhost:${PORT}/api/airports?search=JFK`);
+      console.log(`   → http://localhost:${PORT}/api/airports?search=London`);
+
+      console.log(`\n📊 STATISTICS API:`);
+      console.log(`   Get today's flight statistics:`);
+      console.log(`   → http://localhost:${PORT}/api/statistics`);
+
+      console.log(`\n❤️ HEALTH CHECK:`);
+      console.log(`   Check server health:`);
+      console.log(`   → http://localhost:${PORT}/health`);
+
+      console.log(`\n🌐 CURL Examples:`);
+      console.log(
+        `   curl "http://localhost:${PORT}/api/flights?is_delayed=true&limit=5"`
+      );
+      console.log(`   curl "http://localhost:${PORT}/api/flights/AA1234"`);
+      console.log(
+        `   curl "http://localhost:${PORT}/api/airports?search=Dubai"`
+      );
+      console.log(`   curl "http://localhost:${PORT}/api/statistics"`);
+      console.log(
+        `   curl "http://localhost:${PORT}/api/flights?simulateDelay=true&limit=10"`
+      );
+      console.log(
+        `   curl "http://localhost:${PORT}/api/flights/UA1234?simulateDelay=true"`
+      );
+
+      console.log(`\n💡 Pro Tips:`);
+      console.log(`   • Use 'limit' and 'offset' parameters for pagination`);
+      console.log(
+        `   • Airport codes (IATA) should be 3 letters (e.g., JFK, LAX, LHR)`
+      );
+      console.log(
+        `   • Airline codes (IATA) should be 2 letters (e.g., AA, UA, DL)`
+      );
+      console.log(`   • Date format: YYYY-MM-DD (e.g., 2025-10-22)`);
+      console.log(`   • Boolean values: 'true' or 'false' as strings`);
+      console.log(
+        `   • Flight status options: scheduled, active, landed, delayed, cancelled`
+      );
+      console.log(
+        `   • simulateDelay=true: Applies realistic delays to ~30% of eligible flights`
+      );
+      console.log(
+        `   • Simulation only affects 'scheduled' and 'active' flights not already delayed`
+      );
+      console.log(
+        `   • Simulated delays include: light (15-45min), moderate (45-90min), heavy (90-180min)`
+      );
+      console.log(
+        `   • Response includes 'simulation' object with delay statistics when simulateDelay=true`
       );
     });
   } catch (error) {
