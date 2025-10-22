@@ -57,14 +57,6 @@ async function main() {
   }
   if (!latestBlock) throw new Error("Could not get latest block");
 
-  // Ensure manager has enough PYUSD to pay out on success
-  const payoutAmount = await manager.payoutAmount();
-  const managerAddr = await manager.getAddress();
-  const managerBalBefore = await pyusd.balanceOf(managerAddr);
-  if (managerBalBefore < payoutAmount) {
-    await (await pyusd.mint(managerAddr, payoutAmount)).wait();
-  }
-
   // Prepare holder signer (use given address; impersonate if needed)
   let holderSigner: any;
   try {
@@ -84,6 +76,14 @@ async function main() {
   const policy = await manager.policies(policyId);
   if (policy.holder.toLowerCase() !== holder.toLowerCase()) {
     throw new Error(`Policy ${policyId.toString()} holder mismatch. onChain=${policy.holder} provided=${holder}`);
+  }
+
+  // Ensure manager has enough PYUSD to pay out for this policy's tier
+  const payoutAmount = policy.payout;
+  const managerAddr = await manager.getAddress();
+  const managerBalBefore = await pyusd.balanceOf(managerAddr);
+  if (managerBalBefore < payoutAmount) {
+    await (await pyusd.mint(managerAddr, payoutAmount)).wait();
   }
   const nowBlock = await ethers.provider.getBlock("latest");
   const nowTs = BigInt(nowBlock?.timestamp ?? 0);
@@ -109,7 +109,7 @@ async function main() {
   if (!oracleRequested) throw new Error("OracleRequested event not found in block");
   const requestId: string = oracleRequested.args.requestId;
 
-  const defaultThreshold: number = Number(await manager.THRESHOLD_MINUTES());
+  const defaultThreshold: number = Number(policy.thresholdMinutes);
   const delayMinutes = delayMinutesOverride ?? defaultThreshold;
 
   const userBalanceBefore = await pyusd.balanceOf(holder);
