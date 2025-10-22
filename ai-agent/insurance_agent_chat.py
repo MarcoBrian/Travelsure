@@ -211,83 +211,75 @@ if METTA_AVAILABLE:
 
 def calculate_insurance_options(flight_data: FlightHistoricalResponse, base_premium: float, risk_score: float) -> list[dict]:
     """
-    Calculate all available insurance options with pricing
+    Calculate all available insurance options with pricing matching PolicyManager.sol
     
     Args:
         flight_data: FlightHistoricalResponse with complete analysis
-        base_premium: Base premium amount
+        base_premium: Base premium amount (not used - using smart contract fixed pricing)
         risk_score: Risk score (0.0 to 1.0)
         
     Returns:
-        List of insurance option dictionaries
+        List of insurance option dictionaries with smart contract pricing
     """
     options = []
     
-    # Calculate cancellation risk
-    cancellation_rate = 0
-    if flight_data.cancelled_count and flight_data.total_historical_flights:
-        cancellation_rate = (flight_data.cancelled_count / flight_data.total_historical_flights)
-    
-    # Calculate delay rate
+    # Calculate delay rate for recommendations
     delay_rate = 1 - (flight_data.ontime_percent if flight_data.ontime_percent else 0.5)
     
-    # Time-bound delay insurance
-    # CORRECT LOGIC: Lower threshold = Higher premium (more likely to claim)
-    # Higher threshold = Lower premium (less likely to claim)
+    # Smart Contract Pricing - matching PolicyManager.sol exactly
+    # Formula: premium = PricingLib.quote(payout, probBps, marginBps) * premiumMultiplierBps / 10000
+    # PricingLib.quote = (payout * probBps / 10000) * (10000 + marginBps) / 10000
     
-    # 2-HOUR THRESHOLD - HIGHEST premium (easiest to trigger = highest risk for insurer)
-    delay_2h_premium = round(base_premium * 1.0 * (1 + delay_rate * 2.0), 2)
+    # 1-HOUR THRESHOLD (Platinum) - Smart contract pricing
+    # Config: payout=$1000, probBps=4000 (40%), marginBps=800 (8%), multiplier=15000 (1.5x)
+    platinum_base = (1000 * 4000 / 10000) * (10000 + 800) / 10000  # = 432
+    platinum_premium = (platinum_base * 15000) / 10000  # = 648.00
+    options.append({
+        "option_type": "delay_1h",
+        "name": "1-Hour Threshold (Platinum)",
+        "description": "Claim $1000 payout if delay exceeds 1 hour",
+        "coverage_details": ["Payout: $1000 PYUSD", "Threshold: 1 hour", "Tier: Platinum"],
+        "premium": round(platinum_premium, 2),
+        "recommended": delay_rate < 0.10  # Very reliable flights only
+    })
+    
+    # 2-HOUR THRESHOLD (Gold) - Smart contract pricing
+    # Config: payout=$500, probBps=3500 (35%), marginBps=700 (7%), multiplier=15000 (1.5x)
+    gold_base = (500 * 3500 / 10000) * (10000 + 700) / 10000  # = 187.25
+    gold_premium = (gold_base * 15000) / 10000  # = 280.88
     options.append({
         "option_type": "delay_2h",
-        "name": "2-Hour Threshold",
-        "description": "Claim payout if delay exceeds 2 hours",
-        "coverage_details": ["Payout via smart contract when delay > 2 hours"],
-        "premium": delay_2h_premium,
-        "recommended": delay_rate < 0.15  # Low delay risk - good for reliable flights
+        "name": "2-Hour Threshold (Gold)",
+        "description": "Claim $500 payout if delay exceeds 2 hours",
+        "coverage_details": ["Payout: $500 PYUSD", "Threshold: 2 hours", "Tier: Gold"],
+        "premium": round(gold_premium, 2),
+        "recommended": delay_rate >= 0.10 and delay_rate < 0.20  # Good reliability
     })
     
-    # 4-HOUR THRESHOLD - High premium
-    delay_4h_premium = round(base_premium * 0.75 * (1 + delay_rate * 1.5), 2)
+    # 3-HOUR THRESHOLD (Silver) - Smart contract pricing
+    # Config: payout=$250, probBps=3200 (32%), marginBps=600 (6%), multiplier=12000 (1.2x)
+    silver_base = (250 * 3200 / 10000) * (10000 + 600) / 10000  # = 84.8
+    silver_premium = (silver_base * 12000) / 10000  # = 101.76
+    options.append({
+        "option_type": "delay_3h",
+        "name": "3-Hour Threshold (Silver)",
+        "description": "Claim $250 payout if delay exceeds 3 hours",
+        "coverage_details": ["Payout: $250 PYUSD", "Threshold: 3 hours", "Tier: Silver"],
+        "premium": round(silver_premium, 2),
+        "recommended": delay_rate >= 0.20 and delay_rate < 0.35  # Moderate reliability
+    })
+    
+    # 4-HOUR THRESHOLD (Basic) - Smart contract pricing
+    # Config: payout=$100, probBps=3000 (30%), marginBps=500 (5%), multiplier=10000 (1.0x)
+    basic_base = (100 * 3000 / 10000) * (10000 + 500) / 10000  # = 31.5
+    basic_premium = (basic_base * 10000) / 10000  # = 31.50
     options.append({
         "option_type": "delay_4h",
-        "name": "4-Hour Threshold",
-        "description": "Claim payout if delay exceeds 4 hours",
-        "coverage_details": ["Payout via smart contract when delay > 4 hours"],
-        "premium": delay_4h_premium,
-        "recommended": delay_rate >= 0.15 and delay_rate < 0.25
-    })
-    
-    # 6-HOUR THRESHOLD - Medium premium
-    delay_6h_premium = round(base_premium * 0.55 * (1 + delay_rate * 1.2), 2)
-    options.append({
-        "option_type": "delay_6h",
-        "name": "6-Hour Threshold",
-        "description": "Claim payout if delay exceeds 6 hours",
-        "coverage_details": ["Payout via smart contract when delay > 6 hours"],
-        "premium": delay_6h_premium,
-        "recommended": delay_rate >= 0.25 and delay_rate < 0.35
-    })
-    
-    # 8-HOUR THRESHOLD - Lower premium (harder to trigger)
-    delay_8h_premium = round(base_premium * 0.40 * (1 + delay_rate * 0.9), 2)
-    options.append({
-        "option_type": "delay_8h",
-        "name": "8-Hour Threshold",
-        "description": "Claim payout if delay exceeds 8 hours",
-        "coverage_details": ["Payout via smart contract when delay > 8 hours"],
-        "premium": delay_8h_premium,
-        "recommended": delay_rate >= 0.35 and delay_rate < 0.5
-    })
-    
-    # 12-HOUR THRESHOLD - LOWEST premium (hardest to trigger = lowest risk for insurer)
-    delay_12h_premium = round(base_premium * 0.25 * (1 + delay_rate * 0.6), 2)
-    options.append({
-        "option_type": "delay_12h",
-        "name": "12-Hour Threshold",
-        "description": "Claim payout if delay exceeds 12 hours",
-        "coverage_details": ["Payout via smart contract when delay > 12 hours"],
-        "premium": delay_12h_premium,
-        "recommended": delay_rate >= 0.5  # High delay risk
+        "name": "4-Hour Threshold (Basic)",
+        "description": "Claim $100 payout if delay exceeds 4 hours",
+        "coverage_details": ["Payout: $100 PYUSD", "Threshold: 4 hours", "Tier: Basic"],
+        "premium": round(basic_premium, 2),
+        "recommended": delay_rate >= 0.35  # Less reliable flights
     })
     
     return options
@@ -519,21 +511,22 @@ def _fallback_recommendation(delay_rate: float, ontime_percent: float, delay_ris
 def _fallback_recommendation(delay_rate: float, ontime_percent: float, delay_risk: str) -> tuple[str, str]:
     """Fallback recommendation logic when MeTTa is not available"""
     
-    if delay_rate < 0.15:
+    if delay_rate < 0.10:
+        # Excellent reliability - recommend 1-hour threshold (Platinum)
+        recommendation = "delay_1h"
+        reasoning = f"Excellent {delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 1-hour Platinum threshold recommended for highly reliable flights."
+    elif delay_rate < 0.20:
+        # Very good reliability - recommend 2-hour threshold (Gold)
         recommendation = "delay_2h"
-        reasoning = f"Excellent {delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 2-hour threshold recommended."
-    elif delay_rate < 0.25:
-        recommendation = "delay_4h"
-        reasoning = f"Good {delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 4-hour threshold recommended."
+        reasoning = f"Very good {delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 2-hour Gold threshold recommended."
     elif delay_rate < 0.35:
-        recommendation = "delay_6h"
-        reasoning = f"{delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 6-hour threshold recommended."
-    elif delay_rate < 0.5:
-        recommendation = "delay_8h"
-        reasoning = f"{delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 8-hour threshold recommended."
+        # Moderate reliability - recommend 3-hour threshold (Silver)
+        recommendation = "delay_3h"
+        reasoning = f"{delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 3-hour Silver threshold recommended for balanced protection."
     else:
-        recommendation = "delay_12h"
-        reasoning = f"{delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 12-hour threshold recommended."
+        # Lower reliability - recommend 4-hour threshold (Basic)
+        recommendation = "delay_4h"
+        reasoning = f"{delay_risk} risk with {ontime_percent*100:.1f}% on-time performance. 4-hour Basic threshold recommended - cost-effective coverage."
     
     return recommendation, reasoning
 
@@ -593,11 +586,10 @@ def format_recommendation_as_text(analysis: dict, airline: str, flight_number: s
     
     # Insurance type emoji
     insurance_emoji = {
-        "delay_2h": "⏰",
-        "delay_4h": "⏱️",
-        "delay_6h": "⏲️",
-        "delay_8h": "🕐",
-        "delay_12h": "🕛",
+        "delay_1h": "💎",
+        "delay_2h": "🥇",
+        "delay_3h": "🥈",
+        "delay_4h": "🥉",
         "delay": "⏱️"
     }
     
@@ -742,11 +734,10 @@ def format_recommendation_as_text(analysis: dict, airline: str, flight_number: s
     
     # Update emoji map for new options
     insurance_emoji_extended = {
-        "delay_2h": "⏰",
-        "delay_4h": "⏱️",
-        "delay_6h": "⏲️",
-        "delay_8h": "🕐",
-        "delay_12h": "🕛",
+        "delay_1h": "💎",
+        "delay_2h": "🥇",
+        "delay_3h": "🥈",
+        "delay_4h": "🥉",
         "delay": "⏱️"
     }
     
@@ -831,14 +822,13 @@ Tell me your flight number and date:
 📅 Seasonal delay patterns
 🧠 MeTTa knowledge graph reasoning
 
-**Time-Based Insurance Options:**
-⏰ 2-Hour Threshold (Reliable flights)
-⏱️ 4-Hour Threshold (Good reliability)
-⏲️ 6-Hour Threshold (Moderate delays)
-🕐 8-Hour Threshold (Frequent delays)
-🕛 12-Hour Threshold (Very delayed flights)
+**Smart Contract Insurance Tiers:**
+💎 Platinum (1h): $648 → $1000 payout - Highly reliable flights
+🥇 Gold (2h): $280.88 → $500 payout - Good reliability
+🥈 Silver (3h): $101.76 → $250 payout - Moderate reliability
+🥉 Basic (4h): $31.50 → $100 payout - Budget-friendly
 
-💡 AI analyzes ALL factors to recommend optimal threshold
+💡 AI analyzes ALL factors to recommend optimal tier
 🌐 Purchase at: travelsure.vercel.app
 
 What flight would you like me to analyze?"""
@@ -872,22 +862,21 @@ What flight would you like me to analyze?"""
    • Cancellation history
    • 🧠 MeTTa knowledge graph processes ALL factors
 
-3. **Get AI-optimized recommendations** with time-threshold options:
-   ⏰ **2-Hour Threshold** - Best for reliable flights (85%+ on-time)
-   ⏱️ **4-Hour Threshold** - Good for consistent flights (75-85% on-time)
-   ⏲️ **6-Hour Threshold** - Moderate delay protection (65-75% on-time)
-   🕐 **8-Hour Threshold** - For frequently delayed flights (50-65% on-time)
-   🕛 **12-Hour Threshold** - Extreme delay coverage (<50% on-time)
+3. **Get AI-optimized recommendations** with smart contract tiers:
+   💎 **Platinum (1h)** - $648 → $1000 payout (90%+ on-time)
+   🥇 **Gold (2h)** - $280.88 → $500 payout (80-90% on-time)
+   🥈 **Silver (3h)** - $101.76 → $250 payout (65-80% on-time)
+   🥉 **Basic (4h)** - $31.50 → $100 payout (<65% on-time)
 
 **How AI Adjusts Recommendations:**
-• Severe weather (thunderstorms, snow, fog) → Higher threshold
+• Severe weather (thunderstorms, snow, fog) → Adjust tier selection
 • Congested airports → Risk adjustment applied
 • Winter/Holiday season → Additional coverage recommended
 • Cancellation history → Upgraded protection
-• Multiple risk factors → Intelligent threshold upgrade
+• Multiple risk factors → Intelligent tier recommendation
 
 **Smart Contract Execution:**
-• AI recommends threshold based on comprehensive analysis
+• AI recommends tier based on comprehensive analysis
 • Pay premium via smart contract on travelsure.vercel.app
 • If delay exceeds threshold, claim payout instantly
 • No paperwork, automated execution

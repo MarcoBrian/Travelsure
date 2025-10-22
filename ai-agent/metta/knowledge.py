@@ -16,13 +16,40 @@ def initialize_insurance_knowledge(metta: MeTTa):
     metta.space().add_atom(E(S("insurance_type"), S("cancellation"), S("flight cancellation")))
     
     # ===== INSURANCE CHARACTERISTICS =====
-    # 2-Hour Threshold
-    metta.space().add_atom(E(S("best_for"), S("delay_2h"), ValueAtom("highly reliable flights with on-time rate > 85%")))
-    metta.space().add_atom(E(S("premium_multiplier"), S("delay_2h"), ValueAtom("0.3")))
-    metta.space().add_atom(E(S("description"), S("delay_2h"), ValueAtom("Quick coverage for any unexpected delay on reliable flights")))
-    metta.space().add_atom(E(S("payout_trigger"), S("delay_2h"), ValueAtom("delay exceeds 2 hours")))
+    # ===== INSURANCE TYPES (matching PolicyManager.sol tiers) =====
+    # 1-Hour Threshold (Platinum Tier)
+    metta.space().add_atom(E(S("best_for"), S("delay_1h"), ValueAtom("highly reliable flights with on-time rate > 90%")))
+    metta.space().add_atom(E(S("premium_amount"), S("delay_1h"), ValueAtom("$432.00")))
+    metta.space().add_atom(E(S("payout_amount"), S("delay_1h"), ValueAtom("$1000.00")))
+    metta.space().add_atom(E(S("description"), S("delay_1h"), ValueAtom("Premium protection - highest payout for delays exceeding 1 hour")))
+    metta.space().add_atom(E(S("payout_trigger"), S("delay_1h"), ValueAtom("delay exceeds 1 hour")))
+    metta.space().add_atom(E(S("blockchain_tier"), S("delay_1h"), ValueAtom("Platinum")))
     
-    # 4-Hour Threshold
+    # 2-Hour Threshold (Gold Tier)
+    metta.space().add_atom(E(S("best_for"), S("delay_2h"), ValueAtom("reliable flights with on-time rate 80-90%")))
+    metta.space().add_atom(E(S("premium_amount"), S("delay_2h"), ValueAtom("$183.75")))
+    metta.space().add_atom(E(S("payout_amount"), S("delay_2h"), ValueAtom("$500.00")))
+    metta.space().add_atom(E(S("description"), S("delay_2h"), ValueAtom("Gold protection for reliable flights with 2-hour coverage")))
+    metta.space().add_atom(E(S("payout_trigger"), S("delay_2h"), ValueAtom("delay exceeds 2 hours")))
+    metta.space().add_atom(E(S("blockchain_tier"), S("delay_2h"), ValueAtom("Gold")))
+    
+    # 3-Hour Threshold (Silver Tier)
+    metta.space().add_atom(E(S("best_for"), S("delay_3h"), ValueAtom("moderately reliable flights with on-time rate 65-80%")))
+    metta.space().add_atom(E(S("premium_amount"), S("delay_3h"), ValueAtom("$102.00")))
+    metta.space().add_atom(E(S("payout_amount"), S("delay_3h"), ValueAtom("$250.00")))
+    metta.space().add_atom(E(S("description"), S("delay_3h"), ValueAtom("Silver protection with balanced coverage for moderate delays")))
+    metta.space().add_atom(E(S("payout_trigger"), S("delay_3h"), ValueAtom("delay exceeds 3 hours")))
+    metta.space().add_atom(E(S("blockchain_tier"), S("delay_3h"), ValueAtom("Silver")))
+    
+    # 4-Hour Threshold (Basic Tier)
+    metta.space().add_atom(E(S("best_for"), S("delay_4h"), ValueAtom("less reliable flights with on-time rate < 65%")))
+    metta.space().add_atom(E(S("premium_amount"), S("delay_4h"), ValueAtom("$33.60")))
+    metta.space().add_atom(E(S("payout_amount"), S("delay_4h"), ValueAtom("$100.00")))
+    metta.space().add_atom(E(S("description"), S("delay_4h"), ValueAtom("Basic protection for budget-conscious travelers")))
+    metta.space().add_atom(E(S("payout_trigger"), S("delay_4h"), ValueAtom("delay exceeds 4 hours")))
+    metta.space().add_atom(E(S("blockchain_tier"), S("delay_4h"), ValueAtom("Basic")))
+    
+    # REMOVED OLD TIERS: delay_6h, delay_8h, delay_12h (not in smart contract)    # 4-Hour Threshold
     metta.space().add_atom(E(S("best_for"), S("delay_4h"), ValueAtom("consistently good flights with on-time rate 75-85%")))
     metta.space().add_atom(E(S("premium_multiplier"), S("delay_4h"), ValueAtom("0.4")))
     metta.space().add_atom(E(S("description"), S("delay_4h"), ValueAtom("Balanced protection for moderate delay risk")))
@@ -63,12 +90,11 @@ def initialize_insurance_knowledge(metta: MeTTa):
     metta.space().add_atom(E(S("risk_factor"), S("winter_season"), S("weather disruption risk")))
     metta.space().add_atom(E(S("risk_factor"), S("summer_thunderstorms"), S("seasonal delay risk")))
     
-    # ===== DELAY RISK LEVELS → RECOMMENDATIONS =====
-    metta.space().add_atom(E(S("risk_level"), S("excellent"), ValueAtom("on-time rate > 85%, recommend 2h threshold")))
-    metta.space().add_atom(E(S("risk_level"), S("good"), ValueAtom("on-time rate 75-85%, recommend 4h threshold")))
-    metta.space().add_atom(E(S("risk_level"), S("moderate"), ValueAtom("on-time rate 65-75%, recommend 6h threshold")))
-    metta.space().add_atom(E(S("risk_level"), S("poor"), ValueAtom("on-time rate 50-65%, recommend 8h threshold")))
-    metta.space().add_atom(E(S("risk_level"), S("very_poor"), ValueAtom("on-time rate < 50%, recommend 12h threshold")))
+    # ===== DELAY RISK LEVELS → RECOMMENDATIONS (matching smart contract tiers) =====
+    metta.space().add_atom(E(S("risk_level"), S("excellent"), ValueAtom("on-time rate > 90%, recommend 1h threshold (Platinum)")))
+    metta.space().add_atom(E(S("risk_level"), S("good"), ValueAtom("on-time rate 80-90%, recommend 2h threshold (Gold)")))
+    metta.space().add_atom(E(S("risk_level"), S("moderate"), ValueAtom("on-time rate 65-80%, recommend 3h threshold (Silver)")))
+    metta.space().add_atom(E(S("risk_level"), S("poor"), ValueAtom("on-time rate < 65%, recommend 4h threshold (Basic)")))
     
     # ===== AIRLINE CHARACTERISTICS =====
     # Premium Airlines
