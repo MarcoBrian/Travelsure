@@ -163,27 +163,27 @@ insurance_agent = Agent(
     port=8000,  # Use port 8001 to avoid conflict with Flight Historical Agent
 )
 
-# Add metadata for ASI-1 discoverability
-insurance_agent.metadata = {
-    "name": "TravelSure Insurance Advisor",
-    "description": "AI-powered flight insurance recommendation agent using MeTTa knowledge graphs, historical flight data, and weather analysis to suggest optimal delay insurance thresholds",
-    "tags": ["insurance", "flight", "travel", "risk-analysis", "metta", "ai", "weather", "delay-protection"],
-    "version": "1.0.0",
-    "author": "TravelSure Team",
-    "capabilities": [
-        "Flight insurance recommendations",
-        "Historical flight data analysis",
-        "Weather-aware risk assessment",
-        "Multi-factor AI reasoning",
-        "Time-threshold insurance options",
-        "Smart contract integration"
-    ],
-    "protocols": ["chat", "insurance_recommendation"],
-    "endpoints": {
-        "chat": "Supports Agentverse chat protocol for natural language insurance queries",
-        "insurance_api": "Direct protocol-based insurance recommendations"
-    }
-}
+# # Add metadata for ASI-1 discoverability
+# insurance_agent.metadata = {
+#     "name": "TravelSure Insurance Advisor",
+#     "description": "AI-powered flight insurance recommendation agent using MeTTa knowledge graphs, historical flight data, and weather analysis to suggest optimal delay insurance thresholds",
+#     "tags": ["insurance", "flight", "travel", "risk-analysis", "metta", "ai", "weather", "delay-protection"],
+#     "version": "1.0.0",
+#     "author": "TravelSure Team",
+#     "capabilities": [
+#         "Flight insurance recommendations",
+#         "Historical flight data analysis",
+#         "Weather-aware risk assessment",
+#         "Multi-factor AI reasoning",
+#         "Time-threshold insurance options",
+#         "Smart contract integration"
+#     ],
+#     "protocols": ["chat", "insurance_recommendation"],
+#     "endpoints": {
+#         "chat": "Supports Agentverse chat protocol for natural language insurance queries",
+#         "insurance_api": "Direct protocol-based insurance recommendations"
+#     }
+# }
 
 # Create protocols
 insurance_protocol = Protocol("InsuranceRecommendation")
