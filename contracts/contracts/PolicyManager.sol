@@ -269,6 +269,62 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         emit PolicyPurchased(policyId, msg.sender, p.flightHash, premium, config.basePayout, tier);
     }
 
+    /**
+     * @notice Buy policy for a staker (called by InsuranceSubsidyPool)
+     * @param p Purchase parameters
+     * @param beneficiary The staker who will receive the policy
+     * @return policyId The created policy ID
+     * @dev Pool pays the premium, beneficiary gets the policy
+     */
+    function buyPolicyForStaker(PurchaseParams calldata p, address beneficiary) 
+        external 
+        nonReentrant 
+        returns (uint256 policyId) 
+    {
+        require(beneficiary != address(0), "Invalid beneficiary");
+        bytes32 key = _key(beneficiary, p.flightHash);
+        require(!hasActivePolicy[key], "User already insured for this flight");
+        uint64 expiryTs = p.departureTime + expiryWindow;
+        require(expiryTs > block.timestamp && expiryTs > p.departureTime, "Invalid times");
+        require(payoutAmount > 0, "Pricing not set");
+        require(probBps > 0, "Pricing not set");
+        require(THRESHOLD_MINUTES > 0, "Threshold not set");
+        require(marginBps > 0, "Margin not set");
+
+        // Calculate premium
+        uint256 premium = PricingLib.quote(payoutAmount, probBps, marginBps);
+        
+        // Pool (msg.sender) pays the premium
+        PYUSD.safeTransferFrom(msg.sender, address(this), premium);
+
+        // Create policy for beneficiary
+        policyId = ++nextPolicyId;
+        policies[policyId] = Policy({
+            holder: beneficiary,
+            flightHash: p.flightHash,
+            departureTime: p.departureTime,
+            expiry: expiryTs,
+            thresholdMinutes: THRESHOLD_MINUTES,
+            premium: premium,
+            payout: payoutAmount,
+            status: FlightStatus.Active
+        });
+        _ownedPolicies[beneficiary].push(policyId);
+        hasActivePolicy[key] = true;
+
+        emit PolicyPurchased(policyId, beneficiary, p.flightHash, premium, payoutAmount);
+    }
+
+    /**
+     * @notice Calculate premium for current pricing
+     * @return Premium amount in PYUSD
+     * @dev Public view function for frontend and InsuranceSubsidyPool
+     */
+    function calculatePremium() external view returns (uint256) {
+        require(payoutAmount > 0 && probBps > 0 && marginBps > 0, "Pricing not set");
+        return PricingLib.quote(payoutAmount, probBps, marginBps);
+    }
+
     // ---------------- Chainlink Functions: SEND ----------------
     /**
      * Initiate a Chainlink Functions run for a specific policy.

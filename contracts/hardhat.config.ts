@@ -2,8 +2,11 @@ import type { HardhatUserConfig } from "hardhat/config";
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers";
 import hardhatIgnitionPlugin from "@nomicfoundation/hardhat-ignition";
-import { configVariable } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox-viem";
+import * as dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 const config: HardhatUserConfig = {
   plugins: [hardhatIgnitionPlugin, hardhatToolboxMochaEthers],
@@ -24,6 +27,11 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    hardhat: {
+      type: "edr-simulated",
+      chainId: 31337,
+      chainType: "l1",
+    },
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",
@@ -41,8 +49,8 @@ const config: HardhatUserConfig = {
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      url: process.env.SEPOLIA_RPC_URL || "",
+      accounts: process.env.SEPOLIA_PRIVATE_KEY ? [process.env.SEPOLIA_PRIVATE_KEY] : [],
     },
   },
 };

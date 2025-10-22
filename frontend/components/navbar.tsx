@@ -35,6 +35,24 @@ export function Navbar() {
           </div>
         </a>
         <nav className="hidden md:flex items-center gap-6 text-sm">
+          <a 
+            href="/mint-tokens" 
+            className="text-muted-foreground hover:text-foreground transition-colors font-medium"
+          >
+            🪙 Mint Tokens
+          </a>
+          <a 
+            href="/stake" 
+            className="text-muted-foreground hover:text-foreground transition-colors font-medium"
+          >
+            Stake & Earn
+          </a>
+          <a 
+            href="/dashboard" 
+            className="text-muted-foreground hover:text-foreground transition-colors font-medium"
+          >
+            My Policies
+          </a>
         </nav>
         <div className="flex items-center gap-2">
           <ConnectButton />
