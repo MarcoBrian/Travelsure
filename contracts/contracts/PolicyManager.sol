@@ -34,6 +34,8 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         uint256 payout;
         FlightStatus  status;
         PolicyTier tier;
+        string  departure;
+        string  arrival;
     }
 
     struct TierConfig {
@@ -48,6 +50,8 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     struct PurchaseParams {
         bytes32 flightHash;
         uint64  departureTime;
+        string  departure;
+        string  arrival;
     }
 
     // ---------------- Config ----------------
@@ -255,7 +259,9 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
             premium: premium,
             payout: config.basePayout,
             status: FlightStatus.Active,
-            tier: tier
+            tier: tier,
+            departure: p.departure,
+            arrival: p.arrival
         });
         _ownedPolicies[msg.sender].push(policyId);
         hasActivePolicy[key] = true;
