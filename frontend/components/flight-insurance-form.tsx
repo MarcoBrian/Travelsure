@@ -829,7 +829,7 @@ export function FlightInsuranceForm() {
               Insurance Purchased!
             </h2>
             <p className="text-lg text-gray-600 mb-8 max-w-md mx-auto">
-              Your policy is now active as an NFT in your wallet. You'll receive automatic payouts if your flight is disrupted.
+              Your policy is now active. You'll receive automatic payouts if your flight is disrupted.
             </p>
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-8 rounded-2xl mb-8 border-2 border-blue-200 max-w-md mx-auto">
               <p className="text-sm text-gray-600 mb-3 uppercase tracking-wide font-semibold">Policy NFT</p>
