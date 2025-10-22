@@ -360,11 +360,21 @@ export function FlightInsuranceForm() {
         const bytes = encoder.encode(`${selectedAirline.iata}-${flightNumber}-${departureDate}`)
         return "0x" + Buffer.from(bytes).toString("hex").slice(0, 64).padEnd(64, "0") as `0x${string}`
       })()
+      const departureAirport = getDepartureAirport()
+      const arrivalAirport = getArrivalAirport()
+      const departureName = departureAirport ? `${departureAirport.city} (${departureAirport.fs})` : "Unknown"
+      const arrivalName = arrivalAirport ? `${arrivalAirport.city} (${arrivalAirport.fs})` : "Unknown"
+      
       writeContract({
         abi: policyManagerAbi,
         address: policyManager as `0x${string}`,
         functionName: "buyPolicy",
-        args: [{ flightHash, departureTime: BigInt(departureTs) }, selectedTier]
+        args: [{ 
+          flightHash, 
+          departureTime: BigInt(departureTs),
+          departure: departureName,
+          arrival: arrivalName
+        }, selectedTier]
       })
       setPurchasePhase("buying")
       return

@@ -9,7 +9,7 @@ function formatStatus(status: number): string {
   switch (status) {
     case 1: return "Active"
     case 2: return "Claimable"
-    case 3: return "PaidOut"
+    case 3: return "Paid Out"
     case 4: return "Expired"
     default: return "None"
   }
@@ -113,6 +113,8 @@ function PolicyRow({ index, address, contractAddress, pyusdDecimals }: { index: 
   const premium = getField(policy as any, "premium", 5) as bigint | undefined
   const payout = getField(policy as any, "payout", 6) as bigint | undefined
   const status = getField(policy as any, "status", 7) as number | undefined
+  const departure = getField(policy as any, "departure", 9) as string | undefined
+  const arrival = getField(policy as any, "arrival", 10) as string | undefined
 
   const formatPYUSD = (bn?: bigint) => {
     if (bn == null) return "—"
@@ -124,7 +126,9 @@ function PolicyRow({ index, address, contractAddress, pyusdDecimals }: { index: 
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
       <div className="p-4 flex items-center justify-between">
         <div>
-          <div className="font-medium text-gray-900">Policy #{policyId.toString()}</div>
+          <div className="font-medium text-gray-900">
+            {departure && arrival ? `${departure} → ${arrival}` : `Policy #${policyId.toString()}`}
+          </div>
           <div className="text-sm text-gray-600">Departs: {departureTime ? new Date(Number(departureTime) * 1000).toLocaleString() : "—"}</div>
         </div>
         <div className="text-right">
