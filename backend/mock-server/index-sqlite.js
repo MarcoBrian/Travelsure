@@ -2830,11 +2830,195 @@ app.use("*", (req, res) => {
   });
 });
 
+// Function to extend flight data across date range (today to Dec 30, 2025)
+async function extendFlightDataAcrossDateRange() {
+  return new Promise((resolve, reject) => {
+    console.log(
+      "🗓️ Extending flight data across date range (Oct 23 - Dec 30, 2025)..."
+    );
+
+    // Get all unique flight templates (flight_number, airline info, route info)
+    const templateQuery = `
+      SELECT DISTINCT 
+        flight_number,
+        airline_iata,
+        airline_icao, 
+        airline_name,
+        departure_airport_iata,
+        departure_airport_icao,
+        departure_airport_name,
+        departure_terminal,
+        departure_gate,
+        arrival_airport_iata,
+        arrival_airport_icao,
+        arrival_airport_name,
+        arrival_terminal,
+        arrival_gate,
+        arrival_baggage,
+        -- Use the first occurrence times as template
+        strftime('%H:%M:%S', departure_scheduled) as departure_time,
+        strftime('%H:%M:%S', arrival_scheduled) as arrival_time,
+        flight_status
+      FROM flights 
+      GROUP BY flight_number
+    `;
+
+    db.all(templateQuery, [], (err, templates) => {
+      if (err) {
+        console.error("Error fetching flight templates:", err);
+        reject(err);
+        return;
+      }
+
+      console.log(
+        `📋 Found ${templates.length} unique flight templates to extend`
+      );
+
+      // Generate dates from Oct 23, 2025 to Dec 30, 2025
+      const startDate = moment("2025-10-23");
+      const endDate = moment("2025-12-30");
+      const dates = [];
+
+      for (
+        let date = startDate.clone();
+        date.isSameOrBefore(endDate);
+        date.add(1, "day")
+      ) {
+        dates.push(date.format("YYYY-MM-DD"));
+      }
+
+      console.log(`🗓️ Generating flights for ${dates.length} days`);
+
+      // Clear existing flights first to avoid duplicates
+      db.run("DELETE FROM flights", [], (err) => {
+        if (err) {
+          console.error("Error clearing existing flights:", err);
+          reject(err);
+          return;
+        }
+
+        // Prepare insert statement
+        const insertQuery = `
+          INSERT INTO flights (
+            flight_date, flight_status, flight_number,
+            airline_iata, airline_icao, airline_name,
+            departure_airport_iata, departure_airport_icao, departure_airport_name,
+            departure_terminal, departure_gate, departure_scheduled, departure_estimated,
+            arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
+            arrival_terminal, arrival_gate, arrival_baggage,
+            arrival_scheduled, arrival_estimated,
+            departure_delay, arrival_delay, is_delayed, is_cancelled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const stmt = db.prepare(insertQuery);
+        let insertCount = 0;
+
+        // Generate flights for each template and each date
+        templates.forEach((template) => {
+          dates.forEach((flightDate) => {
+            // Calculate departure and arrival times for this date
+            const departureDateTime = moment(
+              `${flightDate} ${template.departure_time}`
+            );
+            const arrivalDateTime = moment(
+              `${flightDate} ${template.arrival_time}`
+            );
+
+            // Add some randomization to make it more realistic
+            const randomDelayChance = Math.random();
+            let status = template.flight_status;
+            let departureDelay = 0;
+            let arrivalDelay = 0;
+            let isDelayed = 0;
+            let isCancelled = 0;
+
+            // 15% chance of having a random delay (not manual simulation)
+            if (randomDelayChance < 0.15) {
+              departureDelay = Math.floor(Math.random() * 120) + 10; // 10-130 minutes delay
+              arrivalDelay = departureDelay + Math.floor(Math.random() * 20); // Slightly more for arrival
+              status = "delayed";
+              isDelayed = 1;
+            }
+            // 2% chance of cancellation
+            else if (randomDelayChance < 0.17) {
+              status = "cancelled";
+              isCancelled = 1;
+            }
+
+            const departureEstimated = isDelayed
+              ? departureDateTime
+                  .clone()
+                  .add(departureDelay, "minutes")
+                  .format("YYYY-MM-DD HH:mm:ss")
+              : departureDateTime.format("YYYY-MM-DD HH:mm:ss");
+
+            const arrivalEstimated = isDelayed
+              ? arrivalDateTime
+                  .clone()
+                  .add(arrivalDelay, "minutes")
+                  .format("YYYY-MM-DD HH:mm:ss")
+              : arrivalDateTime.format("YYYY-MM-DD HH:mm:ss");
+
+            stmt.run([
+              flightDate,
+              status,
+              template.flight_number,
+              template.airline_iata,
+              template.airline_icao,
+              template.airline_name,
+              template.departure_airport_iata,
+              template.departure_airport_icao,
+              template.departure_airport_name,
+              template.departure_terminal,
+              template.departure_gate,
+              departureDateTime.format("YYYY-MM-DD HH:mm:ss"),
+              departureEstimated,
+              template.arrival_airport_iata,
+              template.arrival_airport_icao,
+              template.arrival_airport_name,
+              template.arrival_terminal,
+              template.arrival_gate,
+              template.arrival_baggage,
+              arrivalDateTime.format("YYYY-MM-DD HH:mm:ss"),
+              arrivalEstimated,
+              departureDelay,
+              arrivalDelay,
+              isDelayed,
+              isCancelled,
+            ]);
+
+            insertCount++;
+          });
+        });
+
+        stmt.finalize((err) => {
+          if (err) {
+            console.error("Error inserting extended flight data:", err);
+            reject(err);
+          } else {
+            console.log(
+              `✅ Successfully generated ${insertCount} flight records across ${dates.length} days`
+            );
+            console.log(
+              `📊 Average of ${Math.round(
+                insertCount / dates.length
+              )} flights per day`
+            );
+            resolve();
+          }
+        });
+      });
+    });
+  });
+}
+
 // Initialize database and start server
 async function startServer() {
   try {
     await initializeDatabase();
     await loadSampleDataFromJSON();
+    await extendFlightDataAcrossDateRange();
 
     app.listen(PORT, () => {
       console.log(
