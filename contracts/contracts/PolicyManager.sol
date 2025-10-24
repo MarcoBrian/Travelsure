@@ -7,6 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
+import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
 import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 
 library PricingLib {
@@ -18,7 +19,7 @@ library PricingLib {
 
 contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     using SafeERC20 for IERC20;
-    // FunctionsRequest helpers not used in mock setup
+    using FunctionsRequest for FunctionsRequest.Request;
 
     // ---------------- Types ----------------
     enum FlightStatus { None, Active, Claimable, PaidOut, Expired }
@@ -272,9 +273,9 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     // ---------------- Chainlink Functions: SEND ----------------
     /**
      * Initiate a Chainlink Functions run for a specific policy.
-     * `args` example for demo: ["DEMO_TRUE","90","120"]
+     * This will call the Travelsure API to check flight delay status.
      */
-    function requestVerification(uint256 policyId, string[] calldata /* args */)
+    function requestVerification(uint256 policyId, string calldata flightNumber, bool simulateDelay)
         external
         returns (bytes32 requestId)
     {
@@ -283,10 +284,24 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         require(msg.sender == p.holder);
         require(block.timestamp >= p.departureTime, "Too early");
         require(block.timestamp <= p.expiry, "Expired window");
+        require(bytes(flightNumber).length > 0, "Flight number required");
 
-        // Send empty payload; mock router can ignore and respond deterministically
+        // Compact JavaScript source for Chainlink Functions
+        string memory source = "const f=args[0],s=args[1]||'false';if(!f)throw Error('Flight required');const u='https://travelsure-production.up.railway.app/api/flights',p=new URLSearchParams({flightNumber:f,simulateDelay:s}),r=await Functions.makeHttpRequest({url:`${u}?${p}`,method:'GET'});if(r.error)throw Error(`API failed: ${r.error}`);const d=r.data;if(!d||!d.data||!d.data.length){const n=Functions.encodeUint256(0),m=Functions.encodeUint256(0);return n+m.slice(2)}const t=d.data[0];let o=false,i=0;if(t.status&&t.status.toLowerCase()==='delayed'){o=true;i=t.delay_minutes&&t.delay_minutes>0?t.delay_minutes:90}const b=Functions.encodeUint256(o?1:0),m=Functions.encodeUint256(i);return b+m.slice(2);";
+
+        // Build the Functions request
+        FunctionsRequest.Request memory req;
+        req.initializeRequestForInlineJavaScript(source);
+        
+        // Set the arguments for the JavaScript function
+        string[] memory args = new string[](2);
+        args[0] = flightNumber;
+        args[1] = simulateDelay ? "true" : "false";
+        req.setArgs(args);
+
+        // Send the request
         bytes32 reqId = _sendRequest(
-            bytes(""),
+            req.encodeCBOR(),
             subscriptionId,
             fulfillGasLimit,
             donID
