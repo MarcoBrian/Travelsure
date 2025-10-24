@@ -552,27 +552,74 @@ def parse_flight_input(text: str) -> Optional[tuple[str, str, str]]:
     
     # Try to extract date
     date = None
-    date_patterns = [
-        r'(\d{4}-\d{2}-\d{2})',  # YYYY-MM-DD
-        r'(\d{2}/\d{2}/\d{4})',  # MM/DD/YYYY
-        r'(TODAY|TOMORROW)',
-    ]
     
-    for pattern in date_patterns:
-        date_match = re.search(pattern, text_upper)
-        if date_match:
-            date_str = date_match.group(1)
-            if date_str == 'TODAY':
-                date = datetime.now().strftime('%Y-%m-%d')
-            elif date_str == 'TOMORROW':
-                date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-            elif '/' in date_str:
-                # Convert MM/DD/YYYY to YYYY-MM-DD
-                parts = date_str.split('/')
-                date = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
-            else:
-                date = date_str
-            break
+    # Check for "today" or "tomorrow"
+    if 'TODAY' in text_upper:
+        date = datetime.now().strftime('%Y-%m-%d')
+    elif 'TOMORROW' in text_upper:
+        date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        # Try various date patterns
+        date_patterns = [
+            r'(\d{4}-\d{2}-\d{2})',  # YYYY-MM-DD
+            r'(\d{2}/\d{2}/\d{4})',  # MM/DD/YYYY
+            r'(\d{1,2})/(\d{1,2})',  # MM/DD (current year assumed)
+        ]
+        
+        for pattern in date_patterns:
+            date_match = re.search(pattern, text)
+            if date_match:
+                date_str = date_match.group(0)
+                if '/' in date_str:
+                    parts = date_str.split('/')
+                    if len(parts) == 3:
+                        # MM/DD/YYYY
+                        date = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+                    elif len(parts) == 2:
+                        # MM/DD (assume current year)
+                        current_year = datetime.now().year
+                        date = f"{current_year}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+                else:
+                    date = date_str
+                break
+        
+        # If no date found yet, try parsing month names
+        if not date:
+            # Map month names to numbers
+            months = {
+                'JANUARY': '01', 'JAN': '01',
+                'FEBRUARY': '02', 'FEB': '02',
+                'MARCH': '03', 'MAR': '03',
+                'APRIL': '04', 'APR': '04',
+                'MAY': '05',
+                'JUNE': '06', 'JUN': '06',
+                'JULY': '07', 'JUL': '07',
+                'AUGUST': '08', 'AUG': '08',
+                'SEPTEMBER': '09', 'SEP': '09', 'SEPT': '09',
+                'OCTOBER': '10', 'OCT': '10',
+                'NOVEMBER': '11', 'NOV': '11',
+                'DECEMBER': '12', 'DEC': '12'
+            }
+            
+            # Try to find month name + day (e.g., "October 24th", "Oct 24", "24th October")
+            for month_name, month_num in months.items():
+                # Pattern: "Month Day" or "Day Month"
+                month_day_pattern = rf'{month_name}\s+(\d{{1,2}})(?:ST|ND|RD|TH)?'
+                day_month_pattern = rf'(\d{{1,2}})(?:ST|ND|RD|TH)?\s+{month_name}'
+                
+                match_month_day = re.search(month_day_pattern, text_upper)
+                match_day_month = re.search(day_month_pattern, text_upper)
+                
+                if match_month_day:
+                    day = match_month_day.group(1).zfill(2)
+                    current_year = datetime.now().year
+                    date = f"{current_year}-{month_num}-{day}"
+                    break
+                elif match_day_month:
+                    day = match_day_month.group(1).zfill(2)
+                    current_year = datetime.now().year
+                    date = f"{current_year}-{month_num}-{day}"
+                    break
     
     # Default to tomorrow if no date specified
     if not date:

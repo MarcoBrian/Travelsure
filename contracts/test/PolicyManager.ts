@@ -41,7 +41,7 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
       payout: 1000n * ONE,
       probBps: 4000n, // 40%
       marginBps: 800n, // 8%
-      multiplierBps: 20000n, // 2x
+      multiplierBps: 15000n, // 1.5x (matches contract default)
       thresholdMinutes: 60n // 1 hour
     }
   };

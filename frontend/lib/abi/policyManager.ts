@@ -59,7 +59,9 @@ export const policyManagerAbi = [
       { "name": "premium", "type": "uint256" },
       { "name": "payout", "type": "uint256" },
       { "name": "status", "type": "uint8" },
-      { "name": "tier", "type": "uint8" }
+      { "name": "tier", "type": "uint8" },
+      { "name": "departure", "type": "string" },
+      { "name": "arrival", "type": "string" }
     ]
   },
   {
@@ -69,7 +71,9 @@ export const policyManagerAbi = [
     "inputs": [
       { "name": "p", "type": "tuple", "components": [
         { "name": "flightHash", "type": "bytes32" },
-        { "name": "departureTime", "type": "uint64" }
+        { "name": "departureTime", "type": "uint64" },
+        { "name": "departure", "type": "string" },
+        { "name": "arrival", "type": "string" }
       ]},
       { "name": "tier", "type": "uint8" }
     ],
@@ -87,6 +91,8 @@ export type PolicyStruct = {
   payout: bigint
   status: number
   tier: number
+  departure: string
+  arrival: string
 }
 
 

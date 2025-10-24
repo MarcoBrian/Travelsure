@@ -550,6 +550,8 @@ function initializeDatabase() {
           
           is_delayed BOOLEAN DEFAULT 0,
           is_cancelled BOOLEAN DEFAULT 0,
+          manual_simulation BOOLEAN DEFAULT 0,
+          manual_delay_reason TEXT,
           
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -564,6 +566,21 @@ function initializeDatabase() {
               reject(err);
               return;
             }
+          }
+        );
+
+        // Add manual simulation columns if they don't exist (migration)
+        db.run(
+          `ALTER TABLE flights ADD COLUMN manual_simulation BOOLEAN DEFAULT 0`,
+          (err) => {
+            // Ignore error if column already exists
+          }
+        );
+
+        db.run(
+          `ALTER TABLE flights ADD COLUMN manual_delay_reason TEXT`,
+          (err) => {
+            // Ignore error if column already exists
             resolve();
           }
         );
@@ -1099,38 +1116,45 @@ function simulateDelayForFlight(flight, forceSimulation = false) {
     }
   }
 
+  // Create a deterministic seed based on flight data
+  // This ensures the same flight always gets the same simulated delay
+  const seed = hashString(
+    flight.flight_number + flight.flight_date + flight.departure_airport_iata
+  );
+
   // Create a copy of the flight to avoid mutating the original
   const simulatedFlight = JSON.parse(JSON.stringify(flight));
 
-  // Generate realistic delay (60% light, 30% moderate, 10% heavy)
-  const random = Math.random();
+  // Generate realistic delay using seeded random (60% light, 30% moderate, 10% heavy)
+  const random = seededRandom(seed);
   let delayMinutes;
   let delayReason;
 
   if (random < 0.6) {
     // Light delay: 15-45 minutes
-    delayMinutes = Math.floor(Math.random() * 30) + 15;
+    delayMinutes = Math.floor(seededRandom(seed + 1) * 30) + 15;
     delayReason = [
       "Air traffic control",
       "Late arriving aircraft",
       "Passenger boarding",
-    ][Math.floor(Math.random() * 3)];
+    ][Math.floor(seededRandom(seed + 2) * 3)];
   } else if (random < 0.9) {
     // Moderate delay: 45-90 minutes
-    delayMinutes = Math.floor(Math.random() * 45) + 45;
+    delayMinutes = Math.floor(seededRandom(seed + 1) * 45) + 45;
     delayReason = [
       "Weather conditions",
       "Technical maintenance",
       "Crew scheduling",
-    ][Math.floor(Math.random() * 3)];
+    ][Math.floor(seededRandom(seed + 2) * 3)];
   } else {
     // Heavy delay: 90-180 minutes
-    delayMinutes = Math.floor(Math.random() * 90) + 90;
+    delayMinutes = Math.floor(seededRandom(seed + 1) * 90) + 90;
     delayReason = [
+      "Severe weather",
       "Severe weather",
       "Aircraft maintenance",
       "Airport congestion",
-    ][Math.floor(Math.random() * 3)];
+    ][Math.floor(seededRandom(seed + 2) * 3)];
   }
 
   // Update flight status and times
@@ -1138,7 +1162,8 @@ function simulateDelayForFlight(flight, forceSimulation = false) {
   simulatedFlight.status.isDelayed = true;
   simulatedFlight.status.isCancelled = false; // Override cancellation if it was cancelled
   simulatedFlight.departure.delay = delayMinutes;
-  simulatedFlight.arrival.delay = delayMinutes + Math.floor(Math.random() * 15); // Arrival delay usually slightly more
+  simulatedFlight.arrival.delay =
+    delayMinutes + Math.floor(seededRandom(seed + 3) * 15); // Arrival delay usually slightly more
 
   // Update estimated times
   const originalDeparture = moment(simulatedFlight.departure.scheduled);
@@ -1151,7 +1176,8 @@ function simulateDelayForFlight(flight, forceSimulation = false) {
     .add(simulatedFlight.arrival.delay, "minutes")
     .toISOString();
 
-  // Add delay reason
+  // Add delay reason and delay_minutes for Chainlink integration
+  simulatedFlight.delay_minutes = delayMinutes;
   simulatedFlight.simulation = {
     delayApplied: true,
     delayMinutes: delayMinutes,
@@ -1160,6 +1186,27 @@ function simulateDelayForFlight(flight, forceSimulation = false) {
   };
 
   return simulatedFlight;
+}
+
+// Helper functions for deterministic random generation
+function hashString(str) {
+  let hash = 0;
+  if (str.length === 0) return hash;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
+
+function seededRandom(seed) {
+  // Simple seeded random number generator (Linear Congruential Generator)
+  const a = 1664525;
+  const c = 1013904223;
+  const m = Math.pow(2, 32);
+  const x = (a * seed + c) % m;
+  return x / m;
 }
 
 // Helper function to get flights with filters
@@ -1342,46 +1389,7 @@ function getFlights(
           },
         }));
 
-        // Apply delay simulation if requested
-        let simulationInfo = null;
-        if (simulateDelay) {
-          let delaysApplied = 0;
-          let totalDelayMinutes = 0;
-
-          flights = flights.map((flight) => {
-            // For explicit simulation requests, force simulation on all eligible flights
-            // For general requests, only simulate 30% of eligible flights
-            const shouldSimulate = Math.random() < 0.3 || flights.length === 1; // Always simulate for single flight requests
-
-            if (shouldSimulate && !flight.status.isDelayed) {
-              const forceSimulation = flights.length === 1; // Force for single flight requests
-              const simulatedFlight = simulateDelayForFlight(
-                flight,
-                forceSimulation
-              );
-              if (
-                simulatedFlight.simulation &&
-                simulatedFlight.simulation.delayApplied
-              ) {
-                delaysApplied++;
-                totalDelayMinutes += simulatedFlight.simulation.delayMinutes;
-              }
-              return simulatedFlight;
-            }
-            return flight;
-          });
-
-          simulationInfo = {
-            delaySimulated: true,
-            delaysApplied: delaysApplied,
-            totalFlights: flights.length,
-            averageDelayMinutes:
-              delaysApplied > 0
-                ? Math.round(totalDelayMinutes / delaysApplied)
-                : 0,
-          };
-        }
-
+        // Return results directly since delays are now stored in the main flights table
         const result = {
           data: flights,
           pagination: {
@@ -1391,11 +1399,6 @@ function getFlights(
             total: countRow.total,
           },
         };
-
-        // Add simulation info if delays were simulated
-        if (simulationInfo) {
-          result.simulation = simulationInfo;
-        }
 
         resolve(result);
       });
@@ -1721,6 +1724,308 @@ app.get("/api/flights", async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+
+/**
+ * @swagger
+ * /api/flights/delay-simulations:
+ *   get:
+ *     summary: Get all manual delay simulations
+ *     description: Retrieve a list of all active manual delay simulations
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: query
+ *         name: flight_number
+ *         schema:
+ *           type: string
+ *         description: Filter by flight number
+ *         example: "AA123"
+ *       - in: query
+ *         name: flight_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by flight date (YYYY-MM-DD)
+ *         example: "2025-10-23"
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of records to return
+ *         example: 10
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of records to skip
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: List of delay simulations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 1
+ *                       flight_number:
+ *                         type: string
+ *                         example: "AA123"
+ *                       flight_date:
+ *                         type: string
+ *                         example: "2025-10-23"
+ *                       delay_minutes:
+ *                         type: integer
+ *                         example: 90
+ *                       delay_reason:
+ *                         type: string
+ *                         example: "Weather conditions"
+ *                       status:
+ *                         type: string
+ *                         example: "delayed"
+ *                       created_at:
+ *                         type: string
+ *                         example: "2025-10-23T10:30:00.000Z"
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                       example: 10
+ *                     offset:
+ *                       type: integer
+ *                       example: 0
+ *                     count:
+ *                       type: integer
+ *                       example: 5
+ *                     total:
+ *                       type: integer
+ *                       example: 25
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.get("/api/flights/delay-simulations", async (req, res) => {
+  try {
+    const { flight_number, flight_date, limit = 10, offset = 0 } = req.query;
+
+    let query =
+      "SELECT flight_number, flight_date, departure_delay as delay_minutes, manual_delay_reason as delay_reason, flight_status as status, updated_at as created_at FROM flights WHERE manual_simulation = 1";
+    const params = [];
+
+    // Apply filters
+    if (flight_number) {
+      query += " AND flight_number = ?";
+      params.push(flight_number.toUpperCase());
+    }
+
+    if (flight_date) {
+      query += " AND flight_date = ?";
+      params.push(flight_date);
+    }
+
+    // Add ordering and pagination
+    query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?";
+    params.push(parseInt(limit), parseInt(offset));
+
+    // Get delay simulations
+    const delaySimulations = await new Promise((resolve, reject) => {
+      db.all(query, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+
+    // Get total count
+    let countQuery =
+      "SELECT COUNT(*) as total FROM flights WHERE manual_simulation = 1";
+    const countParams = [];
+
+    if (flight_number) {
+      countQuery += " AND flight_number = ?";
+      countParams.push(flight_number.toUpperCase());
+    }
+
+    if (flight_date) {
+      countQuery += " AND flight_date = ?";
+      countParams.push(flight_date);
+    }
+
+    const totalCount = await new Promise((resolve, reject) => {
+      db.get(countQuery, countParams, (err, row) => {
+        if (err) reject(err);
+        else resolve(row.total);
+      });
+    });
+
+    res.json({
+      success: true,
+      data: delaySimulations,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        count: delaySimulations.length,
+        total: totalCount,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching delay simulations:", error);
+    res.status(500).json({
+      error: {
+        code: "database_error",
+        message: "Error fetching delay simulations",
+      },
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/flights/delay-simulations/{flight_number}/{flight_date}:
+ *   delete:
+ *     summary: Remove a delay simulation
+ *     description: Remove a manual delay simulation for a specific flight and date
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: path
+ *         name: flight_number
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Flight number
+ *         example: "AA123"
+ *       - in: path
+ *         name: flight_date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Flight date (YYYY-MM-DD)
+ *         example: "2025-10-23"
+ *     responses:
+ *       200:
+ *         description: Delay simulation removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Delay simulation removed successfully"
+ *       404:
+ *         description: Delay simulation not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.delete(
+  "/api/flights/delay-simulations/:flight_number/:flight_date",
+  async (req, res) => {
+    try {
+      const { flight_number, flight_date } = req.params;
+
+      // Validate date format
+      if (!moment(flight_date, "YYYY-MM-DD", true).isValid()) {
+        return res.status(400).json({
+          error: {
+            code: "invalid_date_format",
+            message: "flight_date must be in YYYY-MM-DD format",
+          },
+        });
+      }
+
+      // Reset the flight to remove manual delay simulation
+      const flight = await new Promise((resolve, reject) => {
+        db.get(
+          "SELECT * FROM flights WHERE flight_number = ? AND flight_date = ? AND manual_simulation = 1",
+          [flight_number.toUpperCase(), flight_date],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
+        );
+      });
+
+      if (!flight) {
+        return res.status(404).json({
+          error: {
+            code: "simulation_not_found",
+            message: `No manual delay simulation found for flight ${flight_number} on ${flight_date}`,
+          },
+        });
+      }
+
+      // Reset flight to original state
+      const resetQuery = `
+        UPDATE flights SET 
+          departure_estimated = departure_scheduled,
+          arrival_estimated = arrival_scheduled,
+          departure_delay = 0,
+          arrival_delay = 0,
+          flight_status = 'scheduled',
+          is_delayed = 0,
+          is_cancelled = 0,
+          manual_simulation = 0,
+          manual_delay_reason = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE flight_number = ? AND flight_date = ?
+      `;
+
+      await new Promise((resolve, reject) => {
+        db.run(
+          resetQuery,
+          [flight_number.toUpperCase(), flight_date],
+          function (err) {
+            if (err) reject(err);
+            else resolve(this);
+          }
+        );
+      });
+
+      res.json({
+        success: true,
+        message: "Delay simulation removed successfully",
+      });
+    } catch (error) {
+      console.error("Error removing delay simulation:", error);
+      res.status(500).json({
+        error: {
+          code: "database_error",
+          message: "Error removing delay simulation",
+        },
+      });
+    }
+  }
+);
+
 // Get specific flight by flight number and date
 app.get("/api/flights/:flightNumber", async (req, res) => {
   try {
@@ -2142,6 +2447,358 @@ app.get("/api/statistics", (req, res) => {
  *                   description: Database connection status
  *                   example: connected
  */
+
+/**
+ * @swagger
+ * /api/flights/simulate-delay:
+ *   post:
+ *     summary: Manually simulate delay for a specific flight
+ *     description: Create or update a manual delay simulation for a flight on a specific date
+ *     tags: [Flights]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - flight_number
+ *               - flight_date
+ *               - delay_minutes
+ *             properties:
+ *               flight_number:
+ *                 type: string
+ *                 description: Flight number (e.g., AA123)
+ *                 example: "AA123"
+ *               flight_date:
+ *                 type: string
+ *                 format: date
+ *                 description: Flight date in YYYY-MM-DD format
+ *                 example: "2025-10-23"
+ *               delay_minutes:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 600
+ *                 description: Delay in minutes (0-600, 0 removes simulation)
+ *                 example: 90
+ *               delay_reason:
+ *                 type: string
+ *                 description: Reason for the delay
+ *                 example: "Weather conditions"
+ *               status:
+ *                 type: string
+ *                 enum: [delayed, cancelled]
+ *                 default: delayed
+ *                 description: Flight status to simulate
+ *                 example: "delayed"
+ *     responses:
+ *       200:
+ *         description: Delay simulation created/updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Delay simulation created successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     flight_number:
+ *                       type: string
+ *                       example: "AA123"
+ *                     flight_date:
+ *                       type: string
+ *                       example: "2025-10-23"
+ *                     delay_minutes:
+ *                       type: integer
+ *                       example: 90
+ *                     delay_reason:
+ *                       type: string
+ *                       example: "Weather conditions"
+ *                     status:
+ *                       type: string
+ *                       example: "delayed"
+ *       400:
+ *         description: Invalid request data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post("/api/flights/simulate-delay", async (req, res) => {
+  try {
+    const {
+      flight_number,
+      flight_date,
+      delay_minutes,
+      delay_reason,
+      status = "delayed",
+    } = req.body;
+
+    // Validation
+    if (!flight_number || !flight_date || delay_minutes === undefined) {
+      return res.status(400).json({
+        error: {
+          code: "missing_required_fields",
+          message: "flight_number, flight_date, and delay_minutes are required",
+        },
+      });
+    }
+
+    if (
+      typeof delay_minutes !== "number" ||
+      delay_minutes < 0 ||
+      delay_minutes > 600
+    ) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_delay_minutes",
+          message: "delay_minutes must be a number between 0 and 600",
+        },
+      });
+    }
+
+    // Validate date format
+    if (!moment(flight_date, "YYYY-MM-DD", true).isValid()) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_date_format",
+          message: "flight_date must be in YYYY-MM-DD format",
+        },
+      });
+    }
+
+    // Validate status
+    const validStatuses = ["delayed", "cancelled"];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_status",
+          message: "status must be one of: " + validStatuses.join(", "),
+        },
+      });
+    }
+
+    // Get the existing flight data
+    const flight = await new Promise((resolve, reject) => {
+      db.get(
+        "SELECT * FROM flights WHERE flight_number = ? AND flight_date = ?",
+        [flight_number.toUpperCase(), flight_date],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+
+    if (!flight) {
+      return res.status(400).json({
+        error: {
+          code: "flight_not_found",
+          message: `Flight ${flight_number} on ${flight_date} not found in database`,
+        },
+      });
+    }
+
+    // Calculate new times based on delay
+    let newDepartureEstimated = flight.departure_scheduled;
+    let newArrivalEstimated = flight.arrival_scheduled;
+    let newStatus = flight.flight_status;
+
+    if (delay_minutes > 0) {
+      // Add delay to scheduled times
+      newDepartureEstimated = moment(flight.departure_scheduled)
+        .add(delay_minutes, "minutes")
+        .format("YYYY-MM-DD HH:mm:ss");
+      newArrivalEstimated = moment(flight.arrival_scheduled)
+        .add(delay_minutes, "minutes")
+        .format("YYYY-MM-DD HH:mm:ss");
+      newStatus = status;
+    } else if (delay_minutes === 0) {
+      // Reset to original scheduled times (remove delay)
+      newDepartureEstimated = flight.departure_scheduled;
+      newArrivalEstimated = flight.arrival_scheduled;
+      newStatus = "scheduled"; // Reset to scheduled
+    }
+
+    // Update the flight record
+    const updateQuery = `
+      UPDATE flights SET 
+        departure_estimated = ?,
+        arrival_estimated = ?,
+        departure_delay = ?,
+        arrival_delay = ?,
+        flight_status = ?,
+        is_delayed = ?,
+        is_cancelled = ?,
+        manual_simulation = ?,
+        manual_delay_reason = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE flight_number = ? AND flight_date = ?
+    `;
+
+    await new Promise((resolve, reject) => {
+      db.run(
+        updateQuery,
+        [
+          newDepartureEstimated,
+          newArrivalEstimated,
+          delay_minutes,
+          delay_minutes,
+          newStatus,
+          delay_minutes > 0 ? 1 : 0,
+          status === "cancelled" ? 1 : 0,
+          delay_minutes > 0 ? 1 : 0,
+          delay_minutes > 0 ? delay_reason || "Manual simulation" : null,
+          flight_number.toUpperCase(),
+          flight_date,
+        ],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this);
+        }
+      );
+    });
+
+    res.json({
+      success: true,
+      message:
+        delay_minutes === 0
+          ? "Flight delay removed and reset to scheduled times"
+          : "Flight delay applied successfully",
+      data: {
+        flight_number: flight_number.toUpperCase(),
+        flight_date,
+        delay_minutes,
+        delay_reason:
+          delay_minutes > 0 ? delay_reason || "Manual simulation" : null,
+        status: newStatus,
+        departure_scheduled: flight.departure_scheduled,
+        departure_estimated: newDepartureEstimated,
+        arrival_scheduled: flight.arrival_scheduled,
+        arrival_estimated: newArrivalEstimated,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating delay simulation:", error);
+    res.status(500).json({
+      error: {
+        code: "database_error",
+        message: "Error creating delay simulation",
+      },
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/flights/delay-simulations:
+ *   get:
+ *     summary: Get all manual delay simulations
+ *     description: Retrieve a list of all active manual delay simulations
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: query
+ *         name: flight_number
+ *         schema:
+ *           type: string
+ *         description: Filter by flight number
+ *         example: "AA123"
+ *       - in: query
+ *         name: flight_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by flight date (YYYY-MM-DD)
+ *         example: "2025-10-23"
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of records to return
+ *         example: 10
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of records to skip
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: List of delay simulations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 1
+ *                       flight_number:
+ *                         type: string
+ *                         example: "AA123"
+ *                       flight_date:
+ *                         type: string
+ *                         example: "2025-10-23"
+ *                       delay_minutes:
+ *                         type: integer
+ *                         example: 90
+ *                       delay_reason:
+ *                         type: string
+ *                         example: "Weather conditions"
+ *                       status:
+ *                         type: string
+ *                         example: "delayed"
+ *                       created_at:
+ *                         type: string
+ *                         example: "2025-10-23T10:30:00.000Z"
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                       example: 10
+ *                     offset:
+ *                       type: integer
+ *                       example: 0
+ *                     count:
+ *                       type: integer
+ *                       example: 5
+ *                     total:
+ *                       type: integer
+ *                       example: 25
+ *       500:
+ *         description: Database error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
@@ -2173,11 +2830,195 @@ app.use("*", (req, res) => {
   });
 });
 
+// Function to extend flight data across date range (today to Dec 30, 2025)
+async function extendFlightDataAcrossDateRange() {
+  return new Promise((resolve, reject) => {
+    console.log(
+      "🗓️ Extending flight data across date range (Oct 23 - Dec 30, 2025)..."
+    );
+
+    // Get all unique flight templates (flight_number, airline info, route info)
+    const templateQuery = `
+      SELECT DISTINCT 
+        flight_number,
+        airline_iata,
+        airline_icao, 
+        airline_name,
+        departure_airport_iata,
+        departure_airport_icao,
+        departure_airport_name,
+        departure_terminal,
+        departure_gate,
+        arrival_airport_iata,
+        arrival_airport_icao,
+        arrival_airport_name,
+        arrival_terminal,
+        arrival_gate,
+        arrival_baggage,
+        -- Use the first occurrence times as template
+        strftime('%H:%M:%S', departure_scheduled) as departure_time,
+        strftime('%H:%M:%S', arrival_scheduled) as arrival_time,
+        flight_status
+      FROM flights 
+      GROUP BY flight_number
+    `;
+
+    db.all(templateQuery, [], (err, templates) => {
+      if (err) {
+        console.error("Error fetching flight templates:", err);
+        reject(err);
+        return;
+      }
+
+      console.log(
+        `📋 Found ${templates.length} unique flight templates to extend`
+      );
+
+      // Generate dates from Oct 23, 2025 to Dec 30, 2025
+      const startDate = moment("2025-10-23");
+      const endDate = moment("2025-12-30");
+      const dates = [];
+
+      for (
+        let date = startDate.clone();
+        date.isSameOrBefore(endDate);
+        date.add(1, "day")
+      ) {
+        dates.push(date.format("YYYY-MM-DD"));
+      }
+
+      console.log(`🗓️ Generating flights for ${dates.length} days`);
+
+      // Clear existing flights first to avoid duplicates
+      db.run("DELETE FROM flights", [], (err) => {
+        if (err) {
+          console.error("Error clearing existing flights:", err);
+          reject(err);
+          return;
+        }
+
+        // Prepare insert statement
+        const insertQuery = `
+          INSERT INTO flights (
+            flight_date, flight_status, flight_number,
+            airline_iata, airline_icao, airline_name,
+            departure_airport_iata, departure_airport_icao, departure_airport_name,
+            departure_terminal, departure_gate, departure_scheduled, departure_estimated,
+            arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
+            arrival_terminal, arrival_gate, arrival_baggage,
+            arrival_scheduled, arrival_estimated,
+            departure_delay, arrival_delay, is_delayed, is_cancelled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const stmt = db.prepare(insertQuery);
+        let insertCount = 0;
+
+        // Generate flights for each template and each date
+        templates.forEach((template) => {
+          dates.forEach((flightDate) => {
+            // Calculate departure and arrival times for this date
+            const departureDateTime = moment(
+              `${flightDate} ${template.departure_time}`
+            );
+            const arrivalDateTime = moment(
+              `${flightDate} ${template.arrival_time}`
+            );
+
+            // Add some randomization to make it more realistic
+            const randomDelayChance = Math.random();
+            let status = template.flight_status;
+            let departureDelay = 0;
+            let arrivalDelay = 0;
+            let isDelayed = 0;
+            let isCancelled = 0;
+
+            // 15% chance of having a random delay (not manual simulation)
+            if (randomDelayChance < 0.15) {
+              departureDelay = Math.floor(Math.random() * 120) + 10; // 10-130 minutes delay
+              arrivalDelay = departureDelay + Math.floor(Math.random() * 20); // Slightly more for arrival
+              status = "delayed";
+              isDelayed = 1;
+            }
+            // 2% chance of cancellation
+            else if (randomDelayChance < 0.17) {
+              status = "cancelled";
+              isCancelled = 1;
+            }
+
+            const departureEstimated = isDelayed
+              ? departureDateTime
+                  .clone()
+                  .add(departureDelay, "minutes")
+                  .format("YYYY-MM-DD HH:mm:ss")
+              : departureDateTime.format("YYYY-MM-DD HH:mm:ss");
+
+            const arrivalEstimated = isDelayed
+              ? arrivalDateTime
+                  .clone()
+                  .add(arrivalDelay, "minutes")
+                  .format("YYYY-MM-DD HH:mm:ss")
+              : arrivalDateTime.format("YYYY-MM-DD HH:mm:ss");
+
+            stmt.run([
+              flightDate,
+              status,
+              template.flight_number,
+              template.airline_iata,
+              template.airline_icao,
+              template.airline_name,
+              template.departure_airport_iata,
+              template.departure_airport_icao,
+              template.departure_airport_name,
+              template.departure_terminal,
+              template.departure_gate,
+              departureDateTime.format("YYYY-MM-DD HH:mm:ss"),
+              departureEstimated,
+              template.arrival_airport_iata,
+              template.arrival_airport_icao,
+              template.arrival_airport_name,
+              template.arrival_terminal,
+              template.arrival_gate,
+              template.arrival_baggage,
+              arrivalDateTime.format("YYYY-MM-DD HH:mm:ss"),
+              arrivalEstimated,
+              departureDelay,
+              arrivalDelay,
+              isDelayed,
+              isCancelled,
+            ]);
+
+            insertCount++;
+          });
+        });
+
+        stmt.finalize((err) => {
+          if (err) {
+            console.error("Error inserting extended flight data:", err);
+            reject(err);
+          } else {
+            console.log(
+              `✅ Successfully generated ${insertCount} flight records across ${dates.length} days`
+            );
+            console.log(
+              `📊 Average of ${Math.round(
+                insertCount / dates.length
+              )} flights per day`
+            );
+            resolve();
+          }
+        });
+      });
+    });
+  });
+}
+
 // Initialize database and start server
 async function startServer() {
   try {
     await initializeDatabase();
     await loadSampleDataFromJSON();
+    await extendFlightDataAcrossDateRange();
 
     app.listen(PORT, () => {
       console.log(

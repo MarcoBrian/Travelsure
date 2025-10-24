@@ -360,11 +360,21 @@ export function FlightInsuranceForm() {
         const bytes = encoder.encode(`${selectedAirline.iata}-${flightNumber}-${departureDate}`)
         return "0x" + Buffer.from(bytes).toString("hex").slice(0, 64).padEnd(64, "0") as `0x${string}`
       })()
+      const departureAirport = getDepartureAirport()
+      const arrivalAirport = getArrivalAirport()
+      const departureName = departureAirport ? `${departureAirport.city} (${departureAirport.fs})` : "Unknown"
+      const arrivalName = arrivalAirport ? `${arrivalAirport.city} (${arrivalAirport.fs})` : "Unknown"
+      
       writeContract({
         abi: policyManagerAbi,
         address: policyManager as `0x${string}`,
         functionName: "buyPolicy",
-        args: [{ flightHash, departureTime: BigInt(departureTs) }, selectedTier]
+        args: [{ 
+          flightHash, 
+          departureTime: BigInt(departureTs),
+          departure: departureName,
+          arrival: arrivalName
+        }, selectedTier]
       })
       setPurchasePhase("buying")
       return
@@ -819,7 +829,7 @@ export function FlightInsuranceForm() {
               Insurance Purchased!
             </h2>
             <p className="text-lg text-gray-600 mb-8 max-w-md mx-auto">
-              Your policy is now active as an NFT in your wallet. You'll receive automatic payouts if your flight is disrupted.
+              Your policy is now active. You'll receive automatic payouts if your flight is disrupted.
             </p>
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-8 rounded-2xl mb-8 border-2 border-blue-200 max-w-md mx-auto">
               <p className="text-sm text-gray-600 mb-3 uppercase tracking-wide font-semibold">Policy NFT</p>
