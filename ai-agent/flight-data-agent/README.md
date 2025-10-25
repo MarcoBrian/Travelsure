@@ -1,276 +1,243 @@
-# Flight Data Agents for TravelSure
+# Flight Historical Agent for TravelSure
 
-This directory contains three specialized agents that fetch and analyze flight data from the FlightDelay API for use in the TravelSure insurance platform.
+**ETHOnline 2025 - ASI Alliance Track**
 
-## Agents Overview
+This directory contains the **Flight Historical Agent** - a specialized **Fetch.ai uAgent** that fetches and analyzes real-time flight data for intelligent insurance recommendations.
 
-### 1. Flight Schedule Agent (`flight_schedule_agent.py`)
+## 🛩️ Flight Historical Agent
 
-**API**: `https://flightdelay.app/api/flightstats/schedule/{airline}/{flightNumber}/{date}`
+**Single Comprehensive Intelligence Agent** (`flight_historical_agent.py`)
 
-Fetches real-time flight schedules including:
+### Core Functionality
 
-- Departure and arrival times
-- Airport information (city, coordinates, terminals)
-- Flight equipment details
-- Multi-leg route information
+**APIs Integrated:**
 
-**Use Case**: Getting specific flight details for a particular date.
+- `https://flightdelay.app/api/flightstats/schedule/{airline}/{flight}/{date}` - Real-time schedules
+- `https://flightdelay.app/api/quote/{airline}/{flight}` - Historical performance data
 
-### 2. Flight Quote Agent (`flight_quote_agent.py`)
+**Capabilities:**
 
-**API**: `https://flightdelay.app/api/quote/{airline}/{flightNumber}`
+- ✅ **Real-time Flight Data**: Schedule, routes, departure/arrival times
+- ✅ **Historical Performance**: On-time rates, delay patterns, cancellations
+- ✅ **Risk Assessment**: LOW/MEDIUM/HIGH classification with confidence scores
+- ✅ **Comprehensive Analysis**: Combines schedule + quote data in single response
+- ✅ **Insurance Intelligence**: Risk scores and performance metrics
 
-Fetches historical performance and pricing data:
+### ASI Alliance Integration
 
-- Insurance premium calculations
-- Historical on-time performance percentage
-- Payout amounts (delayed, cancelled, diverted)
-- Historical statistics from past flights
+**Fetch.ai uAgents Framework:**
 
-**Use Case**: Risk assessment and pricing for insurance policies.
+- Autonomous data fetching and processing
+- Efficient message protocols with insurance agent
+- Scalable agent architecture
 
-### 3. Flight Historical Agent (`flight_historical_agent.py`)
+**Agentverse Deployment:**
 
-**APIs**: Combines both Schedule + Quote APIs
+- Discoverable via agent marketplace
+- Production-ready hosting
+- Real-time communication capabilities
 
-Provides comprehensive flight analysis:
+## 🏆 Hackathon Features
 
-- Complete flight information (route, times, airports)
-- Risk assessment (LOW/MEDIUM/HIGH)
-- Risk score calculation (0.0 to 1.0)
-- Insurance recommendations
-- Detailed historical performance analysis
+### Technical Innovation
 
-**Use Case**: Primary agent for the insurance recommendation system. Provides all data needed for informed decisions.
+- **🤖 Autonomous Intelligence**: Agent independently analyzes flight patterns
+- **📡 Real-time Data**: Live flight performance and historical analysis
+- **🔗 Multi-Agent Communication**: Seamless integration with insurance agent
+- **🌐 Production Ready**: Deployed and discoverable via Agentverse
 
-## Quick Start
+### ASI Alliance Technology Stack
+
+- **Fetch.ai uAgents**: Agent framework and communication
+- **Agentverse**: Agent hosting and discovery
+- **Real-time APIs**: FlightDelay.app integration
+- **Message Protocols**: Efficient agent-to-agent communication
+
+## 🚀 Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-cd /Users/ansh/Documents/hackathons/travelsure-eth-global/Travelsure/ai-agent
+cd ai-agent
 pip install -r requirements.txt
 ```
 
-### 2. Set Up Environment
-
-Create/update `.env` file in parent directory:
-
-```bash
-AGENTVERSE_API_TOKEN=your_token_here
-```
-
-Get your token from: https://agentverse.ai/profile/api-keys
-
-### 3. Test Agents Locally
+### 2. Run Agent Locally
 
 ```bash
 cd flight-data-agent
-python test_agents.py
-```
-
-This will test all three agents with sample flight data and verify they work correctly.
-
-### 4. Deploy to Agentverse
-
-```bash
-python deploy_all_agents.py
-```
-
-This will:
-
-- Deploy or update all three agents
-- Provide agent addresses
-- Start the agents automatically
-
-### 5. Get Agent Addresses
-
-After deployment, visit https://agentverse.ai/agents to get the agent addresses. You'll need these for integrating with the insurance agent.
-
-## Message Protocols
-
-### Schedule Agent
-
-**Request**: `FlightScheduleRequest`
-
-```python
-{
-    "airline": "AA",           # IATA code
-    "flight_number": "100",    # Flight number
-    "date": "2025-10-20"       # YYYY-MM-DD
-}
-```
-
-**Response**: `FlightScheduleResponse`
-
-```python
-{
-    "success": True,
-    "airline": "AA",
-    "flight_number": "100",
-    "date": "2025-10-20",
-    "scheduled_flights": [...],  # Array of flight details
-    "airports": [...],           # Array of airport info
-    "error": None
-}
-```
-
-### Quote Agent
-
-**Request**: `FlightQuoteRequest`
-
-```python
-{
-    "airline": "AA",           # IATA code
-    "flight_number": "100"     # Flight number
-}
-```
-
-**Response**: `FlightQuoteResponse`
-
-```python
-{
-    "success": True,
-    "airline": "AA",
-    "flight_number": "100",
-    "premium": 12.50,
-    "payout_delayed": 50.00,
-    "payout_cancelled": 100.00,
-    "payout_diverted": 75.00,
-    "ontime_percent": 0.85,
-    "stat_ontime": 170,
-    "stat_delayed": 25,
-    "stat_cancelled": 3,
-    "stat_diverted": 2,
-    "total_flights": 200,
-    "error": None
-}
-```
-
-### Historical Agent
-
-**Request**: `FlightHistoricalRequest`
-
-```python
-{
-    "airline": "AA",
-    "flight_number": "100",
-    "date": "2025-10-20"
-}
-```
-
-**Response**: `FlightHistoricalResponse`
-
-```python
-{
-    "success": True,
-    "airline": "AA",
-    "flight_number": "100",
-    "date": "2025-10-20",
-
-    # Route info
-    "departure_time": "2025-10-20T08:00:00",
-    "arrival_time": "2025-10-20T12:00:00",
-    "origin_city": "New York",
-    "origin_iata": "JFK",
-    "destination_city": "London",
-    "destination_iata": "LHR",
-
-    # Risk assessment
-    "ontime_percent": 0.85,
-    "delay_risk": "LOW",         # LOW/MEDIUM/HIGH
-    "risk_score": 0.15,          # 0.0 to 1.0
-    "recommendation": "Excellent on-time performance. Low risk flight.",
-
-    # Statistics
-    "total_historical_flights": 200,
-    "ontime_count": 170,
-    "delayed_count": 25,
-    "cancelled_count": 3,
-    "diverted_count": 2,
-
-    # Pricing
-    "suggested_premium": 12.50,
-
-    "error": None
-}
-```
-
-## Integration with Insurance Agent
-
-The Historical Agent is the recommended agent for insurance recommendations. Here's how to integrate:
-
-```python
-from uagents import Agent, Context, Model
-
-# Import the request/response models
-from flight_historical_agent import FlightHistoricalRequest, FlightHistoricalResponse
-
-# Your insurance agent
-insurance_agent = Agent(name="insurance", ...)
-
-# Historical agent address (get from Agentverse after deployment)
-HISTORICAL_AGENT_ADDRESS = "agent1q..."
-
-@insurance_agent.on_message(model=FlightHistoricalResponse)
-async def handle_flight_data(ctx: Context, sender: str, msg: FlightHistoricalResponse):
-    if msg.success:
-        # Use the data for insurance recommendation
-        ctx.logger.info(f"Risk Level: {msg.delay_risk}")
-        ctx.logger.info(f"On-time: {msg.ontime_percent * 100:.1f}%")
-        ctx.logger.info(f"Suggested Premium: ${msg.suggested_premium}")
-
-        # Make insurance decision based on risk_score
-        if msg.risk_score > 0.3:
-            ctx.logger.info("⚠️ High risk - recommend insurance")
-        else:
-            ctx.logger.info("✅ Low risk - optional insurance")
-    else:
-        ctx.logger.error(f"Error: {msg.error}")
-
-# Request flight data
-async def get_flight_data(ctx: Context, airline: str, flight_num: str, date: str):
-    await ctx.send(
-        HISTORICAL_AGENT_ADDRESS,
-        FlightHistoricalRequest(
-            airline=airline,
-            flight_number=flight_num,
-            date=date
-        )
-    )
-```
-
-## Testing
-
-### Test Individual Agents
-
-Run each agent locally:
-
-```bash
-python flight_schedule_agent.py
-python flight_quote_agent.py
 python flight_historical_agent.py
 ```
 
-### Test with Real Flight Data
+Expected output:
 
-Modify `test_agents.py` to test with different flights:
-
-```python
-airline = "BA"          # Try: AA, BA, UA, DL
-flight_number = "001"   # Popular flights: 001, 100, 1
-date = "2025-10-20"     # Future date
+```
+INFO:     [flight_historical_agent]: Agent started successfully
+INFO:     [flight_historical_agent]: Listening for FlightHistoricalRequest messages
 ```
 
-### Common Test Flights
+### 3. Test Agent Communication
 
-- **AA100**: American Airlines (US domestic)
-- **BA001**: British Airways (transatlantic)
-- **UA1**: United Airlines
-- **DL1**: Delta Air Lines
+The agent responds to `FlightHistoricalRequest` messages from the insurance agent:
 
-## Troubleshooting
+```python
+# Example request
+{
+    "airline": "AA",
+    "flight_number": "100",
+    "date": "2025-10-25"
+}
+
+# Example response
+{
+    "success": true,
+    "ontime_percent": 0.75,
+    "delay_risk": "MEDIUM",
+    "risk_score": 0.25,
+    "total_historical_flights": 76,
+    "recommendation": "Consider delay insurance"
+}
+```
+
+## 📡 Message Protocols
+
+### FlightHistoricalRequest
+
+```python
+class FlightHistoricalRequest(Model):
+    airline: str          # IATA airline code (e.g., "AA")
+    flight_number: str    # Flight number (e.g., "100")
+    date: str            # Date in YYYY-MM-DD format
+```
+
+### FlightHistoricalResponse
+
+```python
+class FlightHistoricalResponse(Model):
+    success: bool
+    airline: str
+    flight_number: str
+    date: str
+
+    # Schedule information
+    departure_time: Optional[str] = None
+    arrival_time: Optional[str] = None
+    origin_city: Optional[str] = None
+    origin_iata: Optional[str] = None
+    destination_city: Optional[str] = None
+    destination_iata: Optional[str] = None
+
+    # Historical performance
+    ontime_percent: Optional[float] = None
+    delay_risk: Optional[str] = None  # "LOW", "MEDIUM", "HIGH"
+    risk_score: Optional[float] = None  # 0.0 to 1.0
+
+    # Statistics
+    total_historical_flights: Optional[int] = None
+    ontime_count: Optional[int] = None
+    delayed_count: Optional[int] = None
+    cancelled_count: Optional[int] = None
+
+    recommendation: Optional[str] = None
+    error: Optional[str] = None
+```
+
+## 🏗️ Architecture Integration
+
+```mermaid
+graph TB
+    subgraph "🎯 Insurance Agent"
+        IA["Main Orchestrator: insurance_agent_chat.py"]
+    end
+
+    subgraph "🛩️ Flight Historical Agent"
+        FHA["flight_historical_agent.py: This Agent"]
+        DataFetcher[Data Fetcher]
+        RiskAnalyzer[Risk Analyzer]
+        ResponseBuilder[Response Builder]
+    end
+
+    subgraph "🌐 External APIs"
+        ScheduleAPI["📅 Schedule API: FlightDelay.app/schedule"]
+        QuoteAPI["📊 Quote API: FlightDelay.app/quote"]
+    end
+
+    IA -->|"FlightHistoricalRequest"| FHA
+    FHA --> DataFetcher
+
+    DataFetcher -->|Parallel Requests| ScheduleAPI
+    DataFetcher -->|Parallel Requests| QuoteAPI
+
+    ScheduleAPI -->|"Schedule Data"| DataFetcher
+    QuoteAPI -->|"Historical Stats"| DataFetcher
+
+    DataFetcher --> RiskAnalyzer
+    RiskAnalyzer -->|Risk Score Calculation| ResponseBuilder
+    ResponseBuilder -->|"FlightHistoricalResponse"| IA
+
+    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef api fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef process fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+
+    class IA,FHA agent
+    class ScheduleAPI,QuoteAPI api
+    class DataFetcher,RiskAnalyzer,ResponseBuilder process
+```
+
+## 🧪 Testing
+
+### Test Known Flights
+
+```python
+# American Airlines 100 (JFK → LHR)
+"AA100 on 2025-10-25"  # Good historical data
+
+# United 890 (SFO → SYD)
+"UA890 tomorrow"  # Long-haul international
+
+# British Airways 1 (LHR → JFK)
+"BA001 today"  # Reliable transatlantic
+```
+
+### Expected Results
+
+```mermaid
+flowchart LR
+    A["Flight Query: AA100, 2025-10-25"] --> B[Schedule API Call]
+    A --> C[Quote API Call]
+
+    B --> D["Schedule Data: Departure 20:30, Route JFK to LHR"]
+    C --> E["Historical Data: 76 flights, 75% on-time"]
+
+    D --> F[Risk Analysis Engine]
+    E --> F
+
+    F --> G["Risk Assessment: MEDIUM Risk, Score 0.25"]
+
+    G --> H["Insurance Recommendation: Silver Tier 6h, Premium $45.50"]
+
+    classDef input fill:#e3f2fd,stroke:#1976d2
+    classDef api fill:#f3e5f5,stroke:#7b1fa2
+    classDef data fill:#e8f5e8,stroke:#388e3c
+    classDef analysis fill:#fff3e0,stroke:#f57c00
+    classDef output fill:#fce4ec,stroke:#c2185b
+
+    class A input
+    class B,C api
+    class D,E data
+    class F,G analysis
+    class H output
+```
+
+**Verification Checklist:**
+
+- ✅ Schedule data fetched from FlightDelay API
+- ✅ Historical stats (76+ flights analyzed)
+- ✅ Risk assessment (LOW/MEDIUM/HIGH)
+- ✅ Comprehensive flight information
+- ✅ Insurance-ready risk scores
+
+## 🐛 Troubleshooting
 
 ### API Rate Limits
 
@@ -286,65 +253,55 @@ The FlightDelay API may rate-limit requests. If you see errors:
 - Check date format (YYYY-MM-DD)
 - Try major airline codes (AA, BA, UA, DL)
 
-### Deployment Issues
-
-- Verify AGENTVERSE_API_TOKEN is set
-- Check internet connectivity
-- Ensure you have Agentverse account
-- Try deploying one agent at a time
-
 ### Network Timeouts
 
 - APIs have 15-second timeout
 - Check your internet connection
 - Try testing with a VPN if blocked
 
-## Files
+## 🏆 ETHOnline 2025 - Hackathon Ready
 
-- `flight_schedule_agent.py` - Schedule data agent
-- `flight_quote_agent.py` - Quote and statistics agent
-- `flight_historical_agent.py` - Comprehensive analysis agent
-- `deploy_all_agents.py` - Deployment script
-- `test_agents.py` - Test suite
-- `README.md` - This file
+### Deployment Status ✅
 
-## Architecture
+1. ✅ **Agent Tested Locally** - Flight data agent working
+2. ✅ **Ready for Agentverse** - Deployable via agent marketplace
+3. ✅ **Multi-Agent Integration** - Seamless communication with insurance agent
+4. ✅ **Production Ready** - Real-time flight data processing
 
-```
-┌─────────────────────┐
-│  Insurance Agent    │
-└──────────┬──────────┘
-           │
-           │ requests flight data
-           │
-           ▼
-┌─────────────────────┐
-│ Historical Agent    │
-└──────────┬──────────┘
-           │
-           ├──────────┐
-           │          │
-           ▼          ▼
-┌──────────────┐  ┌──────────────┐
-│Schedule API  │  │  Quote API   │
-└──────────────┘  └──────────────┘
-FlightDelay.app   FlightDelay.app
+### Demo Instructions for Judges
+
+```bash
+# Test flight historical agent locally
+cd ai-agent/flight-data-agent
+python flight_historical_agent.py
+
+# Expected output:
+# ✅ Flight Historical Agent: Working
+# ✅ API Integration: Active
+# ✅ Message Protocols: Ready
 ```
 
-## Next Steps
+### Live Agent Testing
 
-1. ✅ Test agents locally
-2. ✅ Deploy to Agentverse
-3. 📝 Note agent addresses
-4. 🔗 Integrate with insurance agent
-5. 🎯 Update frontend to use agent data
+1. **Test via Insurance Agent**: Use main TravelSure chat interface
+2. **Observe Agent Communication**: Real-time data fetching
+3. **Verify Response Quality**: Comprehensive flight analysis
 
-## Support
+### Key Innovation Points
 
-- Fetch.ai Docs: https://fetch.ai/docs
-- Agentverse: https://agentverse.ai
-- uAgents GitHub: https://github.com/fetchai/uAgents
+- **🤖 Autonomous Intelligence**: Agent independently analyzes flight patterns
+- **📡 Real-time Data**: Live flight performance and historical analysis
+- **🔗 Agent Communication**: Efficient protocols with insurance orchestrator
+- **🌐 Marketplace Ready**: Deployable via Agentverse
 
-## License
+## 📚 ASI Alliance Resources
 
-MIT
+- **🤖 Fetch.ai Docs**: https://fetch.ai/docs - uAgents framework
+- **🌐 Agentverse**: https://agentverse.ai - Agent hosting & discovery
+- **📡 FlightDelay API**: https://flightdelay.app - Real-time flight data
+
+---
+
+**🚀 Status**: Production Ready for Agentverse Deployment  
+**🏆 Achievement**: Autonomous Flight Intelligence Agent  
+**🎯 Impact**: Real-time Flight Risk Assessment for Insurance
