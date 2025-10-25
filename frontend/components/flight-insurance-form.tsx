@@ -10,6 +10,7 @@ import { useAccount, useWriteContract, useReadContract, useWaitForTransactionRec
 import { CONTRACTS } from "@/lib/contracts"
 import { erc20Abi } from "@/lib/abi/erc20"
 import { policyManagerAbi } from "@/lib/abi/policyManager"
+import { tierNFTAbi } from "@/lib/abi/tierNFT"
 
 interface FlightSchedule {
   request: {
@@ -80,9 +81,10 @@ interface QuoteResponse {
 
 export function FlightInsuranceForm() {
   const { address, chainId } = useAccount()
-  const chainKey = chainId === 31337 ? "localhost" : undefined
+  const chainKey = chainId === 31337 || chainId === 1337 ? "localhost" : undefined
   const policyManager = chainKey ? CONTRACTS[chainKey].policyManager : undefined
   const pyusd = chainKey ? CONTRACTS[chainKey].pyusd : undefined
+  const tierNFTAddress = chainKey ? CONTRACTS[chainKey].tierNFT : undefined
 
   const [step, setStep] = useState<"input" | "quote" | "purchase">("input")
   
@@ -95,6 +97,9 @@ export function FlightInsuranceForm() {
   
   // Tier selection
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
+  
+  // Purchase flow state
+  const [useFreeInsurance, setUseFreeInsurance] = useState(false)
   
   // Flight data
   const [flightSchedule, setFlightSchedule] = useState<FlightSchedule | null>(null)
@@ -135,6 +140,20 @@ export function FlightInsuranceForm() {
     args: [3], // Platinum tier
     query: { enabled: Boolean(policyManager) }
   }) as { data: any | undefined }
+
+  // Read user's staking tier
+  const { data: userTier } = useReadContract({
+    abi: tierNFTAbi,
+    address: tierNFTAddress as `0x${string}` | undefined,
+    functionName: "getTier",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(tierNFTAddress && address) }
+  }) as { data: bigint | undefined }
+
+  const tierNumber = userTier !== undefined ? Number(userTier) : 0
+  const tierNames = ["Basic", "Silver", "Gold", "Platinum"]
+  const tierName = tierNames[tierNumber] || "Basic"
+  const hasFreeInsurance = tierNumber >= 1 // Silver+ tier
 
 
   // Tier pricing
@@ -326,7 +345,7 @@ export function FlightInsuranceForm() {
 
   const handlePurchase = async () => {
     try {
-      if (!address || !policyManager || !pyusd || !selectedTierPremium || !flightSchedule || !selectedAirline || selectedTier === null) return
+      if (!address || !policyManager || !flightSchedule || !selectedAirline || selectedTier === null) return
       const departureIso = flightSchedule.scheduledFlights[0].departureTime
       const departureTs = Math.floor(new Date(departureIso).getTime() / 1000)
       const flightHash = (() => {
@@ -335,8 +354,30 @@ export function FlightInsuranceForm() {
         // Simple hash substitute: keccak not in browser. We'll pass bytes32 as 0x0 until we wire hashing util.
         return "0x" + Buffer.from(bytes).toString("hex").slice(0, 64).padEnd(64, "0") as `0x${string}`
       })()
+      const departureAirport = getDepartureAirport()
+      const arrivalAirport = getArrivalAirport()
+      const departureName = departureAirport ? `${departureAirport.city} (${departureAirport.fs})` : "Unknown"
+      const arrivalName = arrivalAirport ? `${arrivalAirport.city} (${arrivalAirport.fs})` : "Unknown"
 
-      // 1) Approve PYUSD
+      // If using free insurance, skip approval and go directly to buyPolicyWithTier
+      if (useFreeInsurance) {
+        writeContract({
+          abi: policyManagerAbi,
+          address: policyManager as `0x${string}`,
+          functionName: "buyPolicyWithTier",
+          args: [{ 
+            flightHash, 
+            departureTime: BigInt(departureTs),
+            departure: departureName,
+            arrival: arrivalName
+          }, selectedTier]
+        })
+        setPurchasePhase("buying")
+        return
+      }
+
+      // Regular flow: 1) Approve PYUSD
+      if (!pyusd || !selectedTierPremium) return
       writeContract({
         abi: erc20Abi,
         address: pyusd as `0x${string}`,
@@ -788,31 +829,117 @@ export function FlightInsuranceForm() {
               </div>
             </div>
 
+            {/* Free Insurance Badge for Silver+ tier users */}
+            {hasFreeInsurance && selectedTierPremium && selectedTier !== null && (
+              <div className="bg-gradient-to-r from-green-50 via-emerald-50 to-green-50 p-8 rounded-2xl mb-8 border-4 border-green-300 shadow-xl animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="p-4 bg-gradient-to-br from-green-400 to-green-600 rounded-2xl">
+                      <Shield className="w-12 h-12 text-white" />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-3">
+                      <h3 className="text-2xl font-bold text-green-900">
+                        FREE with your {tierName} Tier! 🎉
+                      </h3>
+                    </div>
+                    <p className="text-green-800 mb-4 text-lg">
+                      As a staking member, you can get this policy for <span className="font-bold">FREE</span> - pay only gas fees!
+                    </p>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border-2 border-green-200">
+                        <span className="text-gray-500">Regular Price:</span>
+                        <span className="text-gray-900 font-bold line-through">${formatTokenBn(selectedTierPremium)} PYUSD</span>
+                      </div>
+                      <div className="flex items-center gap-2 bg-green-500 px-4 py-2 rounded-lg shadow-lg">
+                        <span className="text-white font-bold">Your Price: $0 PYUSD</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Purchase Button */}
-            <div className="flex items-center justify-center gap-4">
-              <Button
-                onClick={handlePurchase}
-                size="lg"
-                disabled={!selectedTierPremium || selectedTier === null}
-                className="px-12 py-8 text-2xl font-bold bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900 shadow-2xl hover:shadow-blue-500/50 transition-all hover:scale-105 rounded-2xl text-white disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {purchasePhase === "approving" && "Approve in wallet..."}
-                {purchasePhase === "buying" && "Purchasing..."}
-                {purchasePhase === "done" && "Purchased"}
-                {purchasePhase === "idle" && (
-                  selectedTierPremium && selectedTier !== null ? (
-                    <>Buy Now - ${formatTokenBn(selectedTierPremium)} PYUSD</>
-                  ) : selectedTier === null ? (
-                    <>Select a tier to continue</>
-                  ) : (
-                    <>Buy Now - calculating price...</>
-                  )
-                )}
-              </Button>
+            <div className="flex flex-col items-center gap-4">
+              {hasFreeInsurance && selectedTierPremium && selectedTier !== null && (
+                <div className="flex items-center gap-4 w-full max-w-2xl">
+                  <Button
+                    onClick={() => {
+                      setUseFreeInsurance(true)
+                      handlePurchase()
+                    }}
+                    size="lg"
+                    disabled={purchasePhase !== "idle"}
+                    className="flex-1 px-12 py-8 text-2xl font-bold bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:from-green-600 hover:via-green-700 hover:to-green-800 shadow-2xl hover:shadow-green-500/50 transition-all hover:scale-105 rounded-2xl text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {purchasePhase === "buying" && useFreeInsurance && "Getting Free Insurance..."}
+                    {purchasePhase === "idle" && (
+                      <>Use Free Insurance - $0 PYUSD</>
+                    )}
+                  </Button>
+                  <div className="text-gray-500 font-bold">OR</div>
+                  <Button
+                    onClick={() => {
+                      setUseFreeInsurance(false)
+                      handlePurchase()
+                    }}
+                    size="lg"
+                    variant="outline"
+                    disabled={purchasePhase !== "idle"}
+                    className="flex-1 px-8 py-8 text-xl font-bold border-2 hover:bg-gray-50 transition-all rounded-2xl disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {purchasePhase === "approving" && !useFreeInsurance && "Approve in wallet..."}
+                    {purchasePhase === "buying" && !useFreeInsurance && "Purchasing..."}
+                    {purchasePhase === "idle" && (
+                      <>Pay with PYUSD - ${formatTokenBn(selectedTierPremium)}</>
+                    )}
+                  </Button>
+                </div>
+              )}
+              
+              {(!hasFreeInsurance || !selectedTierPremium || selectedTier === null) && (
+                <Button
+                  onClick={() => {
+                    setUseFreeInsurance(false)
+                    handlePurchase()
+                  }}
+                  size="lg"
+                  disabled={!selectedTierPremium || selectedTier === null}
+                  className="px-12 py-8 text-2xl font-bold bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900 shadow-2xl hover:shadow-blue-500/50 transition-all hover:scale-105 rounded-2xl text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {purchasePhase === "approving" && "Approve in wallet..."}
+                  {purchasePhase === "buying" && "Purchasing..."}
+                  {purchasePhase === "done" && "Purchased"}
+                  {purchasePhase === "idle" && (
+                    selectedTierPremium && selectedTier !== null ? (
+                      <>Buy Now - ${formatTokenBn(selectedTierPremium)} PYUSD</>
+                    ) : selectedTier === null ? (
+                      <>Select a tier to continue</>
+                    ) : (
+                      <>Buy Now - calculating price...</>
+                    )
+                  )}
+                </Button>
+              )}
             </div>
 
+            {!hasFreeInsurance && tierNumber === 0 && (
+              <div className="mt-6 text-center">
+                <p className="text-gray-600 mb-2">💡 Want FREE insurance?</p>
+                <a href="/staking" className="text-blue-600 hover:text-blue-700 font-semibold underline">
+                  Stake PYUSD to unlock Silver tier and get free policies!
+                </a>
+              </div>
+            )}
+
             <p className="text-center text-sm text-gray-500 mt-6">
-              Secure payment with <span className="font-bold text-blue-600">PayPal PYUSD</span>
+              {useFreeInsurance ? (
+                <>Secure coverage with <span className="font-bold text-green-600">Free Tier Benefits</span></>
+              ) : (
+                <>Secure payment with <span className="font-bold text-blue-600">PayPal PYUSD</span></>
+              )}
             </p>
           </div>
         </Card>

@@ -1,11 +1,34 @@
 "use client"
 import { Button } from "@/components/ui/button"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { useAccount, useConnect, useDisconnect } from "wagmi"
+import { useAccount, useConnect, useDisconnect, useReadContract } from "wagmi"
 import Image from "next/image"
+import { CONTRACTS } from "@/lib/contracts"
+import { tierNFTAbi } from "@/lib/abi/tierNFT"
 
 export function Navbar() {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chainId } = useAccount()
+  const chainKey = chainId === 31337 || chainId === 1337 ? "localhost" : undefined
+  const tierNFTAddress = chainKey ? CONTRACTS[chainKey].tierNFT : undefined
+
+  // Read user's tier
+  const { data: userTier } = useReadContract({
+    abi: tierNFTAbi,
+    address: tierNFTAddress as `0x${string}` | undefined,
+    functionName: "getTier",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(tierNFTAddress && address) }
+  }) as { data: bigint | undefined }
+
+  const tierNumber = userTier !== undefined ? Number(userTier) : 0
+  const tierIcons = ["🥉", "🥈", "🥇", "💎"]
+  const tierNames = ["Basic", "Silver", "Gold", "Platinum"]
+  const tierColors = [
+    "bg-blue-100 text-blue-800 border-blue-300",
+    "bg-gray-200 text-gray-800 border-gray-400",
+    "bg-yellow-100 text-yellow-800 border-yellow-400",
+    "bg-purple-100 text-purple-800 border-purple-400"
+  ]
 
 
   const formatAddress = (addr: string) => {
@@ -35,8 +58,27 @@ export function Navbar() {
           </div>
         </a>
         <nav className="hidden md:flex items-center gap-6 text-sm">
+          {isConnected && tierNumber >= 1 && (
+            <a 
+              href="/staking" 
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 font-semibold transition-all hover:scale-105 ${tierColors[tierNumber]}`}
+              title={`Your tier: ${tierNames[tierNumber]}`}
+            >
+              <span className="text-lg">{tierIcons[tierNumber]}</span>
+              <span className="text-xs">{tierNames[tierNumber]}</span>
+            </a>
+          )}
         </nav>
         <div className="flex items-center gap-2">
+          {isConnected && tierNumber >= 1 && (
+            <a 
+              href="/staking" 
+              className={`md:hidden flex items-center gap-1 px-2 py-1 rounded-lg border-2 font-semibold ${tierColors[tierNumber]}`}
+              title={`Your tier: ${tierNames[tierNumber]}`}
+            >
+              <span>{tierIcons[tierNumber]}</span>
+            </a>
+          )}
           <ConnectButton />
         </div>
       </div>

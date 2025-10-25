@@ -9,6 +9,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
 import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 
+// Tier NFT interface for checking user's staking tier
+interface ITierNFT {
+    function getTier(address user) external view returns (uint256);
+}
+
 library PricingLib {
     function quote(uint256 payout, uint16 probBps, uint16 marginBps) internal pure returns (uint256) {
         uint256 base = (payout * probBps) / 10_000;
@@ -57,6 +62,7 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     // ---------------- Config ----------------
     IERC20 public immutable PYUSD;
     uint8 public immutable pyusdDecimals;
+    ITierNFT public tierNFT; // For checking user's staking tier
 
     // Chainlink Functions config, in mock set-up these will not be used
     uint64  public subscriptionId;
@@ -148,6 +154,11 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
 
         // Initialize tier configurations
         _initializeTierConfigs();
+    }
+
+    // Set TierNFT address (callable by owner)
+    function setTierNFT(address _tierNFT) external onlyOwner {
+        tierNFT = ITierNFT(_tierNFT);
     }
 
     // ---------------- Events ----------------
@@ -257,6 +268,54 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
             expiry: expiryTs,
             thresholdMinutes: config.thresholdMinutes,
             premium: premium,
+            payout: config.basePayout,
+            status: FlightStatus.Active,
+            tier: tier,
+            departure: p.departure,
+            arrival: p.arrival
+        });
+        _ownedPolicies[msg.sender].push(policyId);
+        hasActivePolicy[key] = true;
+
+        emit PolicyPurchased(policyId, msg.sender, p.flightHash, premium, config.basePayout, tier);
+    }
+
+    // ---------------- Buy with Staking Tier ----------------
+    /**
+     * Buy policy using staking tier benefits (free insurance for Silver+ stakers)
+     * Users with Silver tier (1) or higher get free insurance
+     */
+    function buyPolicyWithTier(PurchaseParams calldata p, PolicyTier tier) external nonReentrant returns (uint256 policyId) {
+        bytes32 key = _key(msg.sender, p.flightHash);
+        require(!hasActivePolicy[key], "User already insured for this flight");
+        require(address(tierNFT) != address(0), "TierNFT not set");
+        
+        uint64 expiryTs = p.departureTime + expiryWindow;
+        require(expiryTs > block.timestamp && expiryTs > p.departureTime, "Invalid times");
+        
+        // Get tier configuration
+        TierConfig memory config = tierConfigs[tier];
+        require(config.active, "Tier not active");
+
+        // Check user's staking tier
+        uint256 userStakingTier = tierNFT.getTier(msg.sender);
+        require(userStakingTier >= 1, "Requires Silver tier or higher to use free insurance");
+
+        // Calculate premium (for tracking, but don't charge it)
+        uint256 basePremium = PricingLib.quote(config.basePayout, config.probBps, config.marginBps);
+        uint256 premium = (basePremium * config.premiumMultiplierBps) / 10000;
+
+        // No PYUSD transfer - platform subsidizes from staking yield
+        // In production, you'd deduct from platform fee reserves
+
+        policyId = ++nextPolicyId;
+        policies[policyId] = Policy({
+            holder: msg.sender,
+            flightHash: p.flightHash,
+            departureTime: p.departureTime,
+            expiry: expiryTs,
+            thresholdMinutes: config.thresholdMinutes,
+            premium: premium, // Track what premium would have been
             payout: config.basePayout,
             status: FlightStatus.Active,
             tier: tier,

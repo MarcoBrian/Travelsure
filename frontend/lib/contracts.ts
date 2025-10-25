@@ -1,7 +1,9 @@
 export const CONTRACTS = {
   localhost: {
-    policyManager: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-    pyusd: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    policyManager: "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
+    pyusd: "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    tierNFT: "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44",
+    staking: "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f",
   },
 } as const;
 

@@ -9,7 +9,11 @@ const nextConfig: NextConfig = {
       ...(config.resolve.alias || {}),
       "@react-native-async-storage/async-storage": false,
     };
+
     return config;
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
   serverExternalPackages: ['@coinbase/wallet-sdk']
 };

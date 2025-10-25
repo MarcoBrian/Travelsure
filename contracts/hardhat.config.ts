@@ -8,19 +8,13 @@ import "@nomicfoundation/hardhat-toolbox-viem";
 const config: HardhatUserConfig = {
   plugins: [hardhatIgnitionPlugin, hardhatToolboxMochaEthers],
   solidity: {
-    profiles: {
-      default: {
-        version: "0.8.28",
+    version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
       },
-      production: {
-        version: "0.8.28",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
-          },
-        },
-      },
+      viaIR: true, // Enable IR-based code generation to avoid stack too deep errors
     },
   },
   networks: {
