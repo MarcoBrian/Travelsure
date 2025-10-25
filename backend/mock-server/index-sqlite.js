@@ -9,7 +9,10 @@ const swaggerUi = require("swagger-ui-express");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const DB_PATH = path.join(__dirname, "flights.db");
+// Configure database path: use DB_PATH env variable or default to local flights.db
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, "flights.db");
+
+console.log(`📊 Database path: ${DB_PATH}`);
 
 // Swagger configuration
 const swaggerOptions = {
