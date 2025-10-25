@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 const moment = require("moment");
 const fs = require("fs");
 const path = require("path");
@@ -9,10 +9,25 @@ const swaggerUi = require("swagger-ui-express");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-// Configure database path: use DB_PATH env variable or default to local flights.db
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "flights.db");
 
-console.log(`📊 Database path: ${DB_PATH}`);
+// PostgreSQL configuration
+const dbConfig = {
+  host: process.env.DB_HOST || "localhost",
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || "travelsure_flights",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASSWORD || "password",
+  max: 20, // maximum number of clients in the pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+};
+
+console.log(
+  `📊 Database config: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`
+);
+
+// Database setup
+let db;
 
 // Swagger configuration
 const swaggerOptions = {
@@ -22,7 +37,7 @@ const swaggerOptions = {
       title: "Travelsure Flight API",
       version: "1.0.0",
       description:
-        "A comprehensive flight data API with persistent SQLite storage and delay simulation capabilities",
+        "A comprehensive flight data API with persistent PostgreSQL storage and delay simulation capabilities",
       contact: {
         name: "Travelsure API Support",
         url: "https://travelsure.site",
@@ -485,111 +500,105 @@ const specs = swaggerJsdoc(swaggerOptions);
 app.use(cors());
 app.use(express.json());
 
-// Database setup
-let db;
-
 function initializeDatabase() {
   return new Promise((resolve, reject) => {
-    db = new sqlite3.Database(DB_PATH, (err) => {
-      if (err) {
-        console.error("Error opening database:", err);
+    db = new Pool(dbConfig);
+
+    // Test connection
+    db.connect()
+      .then((client) => {
+        console.log("📊 Connected to PostgreSQL database");
+        client.release();
+
+        // Create tables
+        createTables()
+          .then(() => resolve())
+          .catch(reject);
+      })
+      .catch((err) => {
+        console.error("Error connecting to database:", err);
         reject(err);
-        return;
-      }
-      console.log("📊 Connected to SQLite database");
-
-      // Create tables
-      db.serialize(() => {
-        // Airlines table
-        db.run(`CREATE TABLE IF NOT EXISTS airlines (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          iata TEXT UNIQUE,
-          icao TEXT,
-          name TEXT
-        )`);
-
-        // Airports table
-        db.run(`CREATE TABLE IF NOT EXISTS airports (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          iata TEXT UNIQUE,
-          icao TEXT,
-          name TEXT,
-          city TEXT,
-          country TEXT,
-          timezone TEXT
-        )`);
-
-        // Flights table with your requested fields
-        db.run(
-          `CREATE TABLE IF NOT EXISTS flights (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          flight_date TEXT NOT NULL,
-          flight_status TEXT NOT NULL,
-          flight_number TEXT NOT NULL,
-          airline_iata TEXT,
-          airline_icao TEXT,
-          airline_name TEXT,
-          
-          departure_airport_iata TEXT,
-          departure_airport_icao TEXT,
-          departure_airport_name TEXT,
-          departure_terminal TEXT,
-          departure_gate TEXT,
-          departure_scheduled TEXT NOT NULL,
-          departure_estimated TEXT,
-          departure_actual TEXT,
-          departure_delay INTEGER DEFAULT 0,
-          
-          arrival_airport_iata TEXT,
-          arrival_airport_icao TEXT,
-          arrival_airport_name TEXT,
-          arrival_terminal TEXT,
-          arrival_gate TEXT,
-          arrival_baggage TEXT,
-          arrival_scheduled TEXT NOT NULL,
-          arrival_estimated TEXT,
-          arrival_actual TEXT,
-          arrival_delay INTEGER DEFAULT 0,
-          
-          is_delayed BOOLEAN DEFAULT 0,
-          is_cancelled BOOLEAN DEFAULT 0,
-          manual_simulation BOOLEAN DEFAULT 0,
-          manual_delay_reason TEXT,
-          
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          
-          FOREIGN KEY (airline_iata) REFERENCES airlines (iata),
-          FOREIGN KEY (departure_airport_iata) REFERENCES airports (iata),
-          FOREIGN KEY (arrival_airport_iata) REFERENCES airports (iata)
-        )`,
-          (err) => {
-            if (err) {
-              console.error("Error creating flights table:", err);
-              reject(err);
-              return;
-            }
-          }
-        );
-
-        // Add manual simulation columns if they don't exist (migration)
-        db.run(
-          `ALTER TABLE flights ADD COLUMN manual_simulation BOOLEAN DEFAULT 0`,
-          (err) => {
-            // Ignore error if column already exists
-          }
-        );
-
-        db.run(
-          `ALTER TABLE flights ADD COLUMN manual_delay_reason TEXT`,
-          (err) => {
-            // Ignore error if column already exists
-            resolve();
-          }
-        );
       });
-    });
   });
+}
+
+async function createTables() {
+  const client = await db.connect();
+
+  try {
+    // Airlines table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS airlines (
+        id SERIAL PRIMARY KEY,
+        iata VARCHAR(3) UNIQUE,
+        icao VARCHAR(4),
+        name TEXT
+      )
+    `);
+
+    // Airports table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS airports (
+        id SERIAL PRIMARY KEY,
+        iata VARCHAR(3) UNIQUE,
+        icao VARCHAR(4),
+        name TEXT,
+        city TEXT,
+        country TEXT,
+        timezone TEXT
+      )
+    `);
+
+    // Flights table with PostgreSQL syntax
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS flights (
+        id SERIAL PRIMARY KEY,
+        flight_date DATE NOT NULL,
+        flight_status VARCHAR(20) NOT NULL,
+        flight_number VARCHAR(10) NOT NULL,
+        airline_iata VARCHAR(3),
+        airline_icao VARCHAR(4),
+        airline_name TEXT,
+        
+        departure_airport_iata VARCHAR(3),
+        departure_airport_icao VARCHAR(4),
+        departure_airport_name TEXT,
+        departure_terminal VARCHAR(10),
+        departure_gate VARCHAR(10),
+        departure_scheduled TIMESTAMP NOT NULL,
+        departure_estimated TIMESTAMP,
+        departure_actual TIMESTAMP,
+        departure_delay INTEGER DEFAULT 0,
+        
+        arrival_airport_iata VARCHAR(3),
+        arrival_airport_icao VARCHAR(4),
+        arrival_airport_name TEXT,
+        arrival_terminal VARCHAR(10),
+        arrival_gate VARCHAR(10),
+        arrival_baggage VARCHAR(10),
+        arrival_scheduled TIMESTAMP NOT NULL,
+        arrival_estimated TIMESTAMP,
+        arrival_actual TIMESTAMP,
+        arrival_delay INTEGER DEFAULT 0,
+        
+        is_delayed BOOLEAN DEFAULT FALSE,
+        is_cancelled BOOLEAN DEFAULT FALSE,
+        manual_simulation BOOLEAN DEFAULT FALSE,
+        manual_delay_reason TEXT,
+        
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        FOREIGN KEY (airline_iata) REFERENCES airlines (iata),
+        FOREIGN KEY (departure_airport_iata) REFERENCES airports (iata),
+        FOREIGN KEY (arrival_airport_iata) REFERENCES airports (iata)
+      )
+    `);
+
+    console.log("📊 Database tables created successfully");
+  } finally {
+    client.release();
+  }
 }
 
 // Generate additional sample data
@@ -837,16 +846,19 @@ function generateAdditionalSampleData() {
 
 // Load sample data from JSON file
 function loadSampleDataFromJSON() {
-  return new Promise((resolve, reject) => {
-    // Check if we already have data
-    db.get("SELECT COUNT(*) as count FROM flights", (err, row) => {
-      if (err) {
-        reject(err);
-        return;
-      }
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Check if we already have data
+      const client = await db.connect();
+      const result = await client.query(
+        "SELECT COUNT(*) as count FROM flights"
+      );
+      client.release();
 
-      if (row.count > 0) {
-        console.log(`📄 Database already contains ${row.count} flights`);
+      if (result.rows[0].count > 0) {
+        console.log(
+          `📄 Database already contains ${result.rows[0].count} flights`
+        );
         // Add additional sample data even if we have existing data
         addAdditionalSampleData()
           .then(() => resolve())
@@ -855,245 +867,237 @@ function loadSampleDataFromJSON() {
       }
 
       // Load from sample-data.json
-      try {
-        const sampleDataPath = path.join(__dirname, "sample-data.json");
-        if (!fs.existsSync(sampleDataPath)) {
-          console.log(
-            "📄 No sample-data.json found, will create with generated data"
-          );
-          resolve();
-          return;
-        }
-
-        const rawData = fs.readFileSync(sampleDataPath, "utf8");
-        const sampleData = JSON.parse(rawData);
-
-        if (!sampleData.data || !Array.isArray(sampleData.data)) {
-          console.log("📄 Invalid sample data format");
-          resolve();
-          return;
-        }
-
+      const sampleDataPath = path.join(__dirname, "sample-data.json");
+      if (!fs.existsSync(sampleDataPath)) {
         console.log(
-          `📄 Loading ${sampleData.data.length} flights from sample-data.json...`
+          "📄 No sample-data.json found, will create with generated data"
         );
-
-        // Process each flight from sample data
-        const insertPromises = sampleData.data.map((flight) => {
-          return new Promise((insertResolve, insertReject) => {
-            // Calculate delay status
-            const departureDelay = flight.departure.delay || 0;
-            const arrivalDelay = flight.arrival.delay || 0;
-            const isDelayed = departureDelay > 0 || arrivalDelay > 0;
-            const isCancelled = flight.flight_status === "cancelled";
-
-            const insertQuery = `
-              INSERT OR IGNORE INTO flights (
-                flight_date, flight_status, flight_number,
-                airline_iata, airline_icao, airline_name,
-                departure_airport_iata, departure_airport_icao, departure_airport_name,
-                departure_terminal, departure_gate, 
-                departure_scheduled, departure_estimated, departure_actual, departure_delay,
-                arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
-                arrival_terminal, arrival_gate, arrival_baggage,
-                arrival_scheduled, arrival_estimated, arrival_actual, arrival_delay,
-                is_delayed, is_cancelled
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-
-            const values = [
-              flight.flight_date,
-              flight.flight_status,
-              flight.flight.iata || flight.flight.number,
-              flight.airline.iata,
-              flight.airline.icao,
-              flight.airline.name,
-              flight.departure.iata,
-              flight.departure.icao,
-              flight.departure.airport,
-              flight.departure.terminal,
-              flight.departure.gate,
-              flight.departure.scheduled,
-              flight.departure.estimated,
-              flight.departure.actual,
-              departureDelay,
-              flight.arrival.iata,
-              flight.arrival.icao,
-              flight.arrival.airport,
-              flight.arrival.terminal,
-              flight.arrival.gate,
-              flight.arrival.baggage,
-              flight.arrival.scheduled,
-              flight.arrival.estimated,
-              flight.arrival.actual,
-              arrivalDelay,
-              isDelayed ? 1 : 0,
-              isCancelled ? 1 : 0,
-            ];
-
-            db.run(insertQuery, values, function (err) {
-              if (err) {
-                console.error("Error inserting flight:", err);
-                insertReject(err);
-              } else {
-                insertResolve();
-              }
-            });
-
-            // Also insert airlines and airports if they don't exist
-            if (flight.airline.iata) {
-              db.run(
-                `INSERT OR IGNORE INTO airlines (iata, icao, name) VALUES (?, ?, ?)`,
-                [flight.airline.iata, flight.airline.icao, flight.airline.name]
-              );
-            }
-
-            if (flight.departure.iata) {
-              db.run(
-                `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
-                [
-                  flight.departure.iata,
-                  flight.departure.icao,
-                  flight.departure.airport,
-                  flight.departure.timezone,
-                ]
-              );
-            }
-
-            if (flight.arrival.iata) {
-              db.run(
-                `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
-                [
-                  flight.arrival.iata,
-                  flight.arrival.icao,
-                  flight.arrival.airport,
-                  flight.arrival.timezone,
-                ]
-              );
-            }
-          });
-        });
-
-        Promise.all(insertPromises)
-          .then(() => {
-            console.log("📄 Sample data loaded successfully!");
-            // Add additional sample data
-            return addAdditionalSampleData();
-          })
-          .then(() => {
-            console.log("📄 Additional sample data added successfully!");
-            resolve();
-          })
-          .catch(reject);
-      } catch (error) {
-        console.error("Error loading sample data:", error);
-        resolve(); // Don't fail if sample data can't be loaded
+        resolve();
+        return;
       }
-    });
+
+      const rawData = fs.readFileSync(sampleDataPath, "utf8");
+      const sampleData = JSON.parse(rawData);
+
+      if (!sampleData.data || !Array.isArray(sampleData.data)) {
+        console.log("📄 Invalid sample data format");
+        resolve();
+        return;
+      }
+
+      console.log(
+        `📄 Loading ${sampleData.data.length} flights from sample-data.json...`
+      );
+
+      // Process each flight from sample data
+      const insertPromises = sampleData.data.map(async (flight) => {
+        const client = await db.connect();
+        try {
+          // Calculate delay status
+          const departureDelay = flight.departure.delay || 0;
+          const arrivalDelay = flight.arrival.delay || 0;
+          const isDelayed = departureDelay > 0 || arrivalDelay > 0;
+          const isCancelled = flight.flight_status === "cancelled";
+
+          const insertQuery = `
+            INSERT INTO flights (
+              flight_date, flight_status, flight_number,
+              airline_iata, airline_icao, airline_name,
+              departure_airport_iata, departure_airport_icao, departure_airport_name,
+              departure_terminal, departure_gate, 
+              departure_scheduled, departure_estimated, departure_actual, departure_delay,
+              arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
+              arrival_terminal, arrival_gate, arrival_baggage,
+              arrival_scheduled, arrival_estimated, arrival_actual, arrival_delay,
+              is_delayed, is_cancelled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+            ON CONFLICT DO NOTHING
+          `;
+
+          const values = [
+            flight.flight_date,
+            flight.flight_status,
+            flight.flight.iata || flight.flight.number,
+            flight.airline.iata,
+            flight.airline.icao,
+            flight.airline.name,
+            flight.departure.iata,
+            flight.departure.icao,
+            flight.departure.airport,
+            flight.departure.terminal,
+            flight.departure.gate,
+            flight.departure.scheduled,
+            flight.departure.estimated,
+            flight.departure.actual,
+            departureDelay,
+            flight.arrival.iata,
+            flight.arrival.icao,
+            flight.arrival.airport,
+            flight.arrival.terminal,
+            flight.arrival.gate,
+            flight.arrival.baggage,
+            flight.arrival.scheduled,
+            flight.arrival.estimated,
+            flight.arrival.actual,
+            arrivalDelay,
+            isDelayed,
+            isCancelled,
+          ];
+
+          await client.query(insertQuery, values);
+
+          // Also insert airlines and airports if they don't exist
+          if (flight.airline.iata) {
+            await client.query(
+              `INSERT INTO airlines (iata, icao, name) VALUES ($1, $2, $3) ON CONFLICT (iata) DO NOTHING`,
+              [flight.airline.iata, flight.airline.icao, flight.airline.name]
+            );
+          }
+
+          if (flight.departure.iata) {
+            await client.query(
+              `INSERT INTO airports (iata, icao, name, timezone) VALUES ($1, $2, $3, $4) ON CONFLICT (iata) DO NOTHING`,
+              [
+                flight.departure.iata,
+                flight.departure.icao,
+                flight.departure.airport,
+                flight.departure.timezone,
+              ]
+            );
+          }
+
+          if (flight.arrival.iata) {
+            await client.query(
+              `INSERT INTO airports (iata, icao, name, timezone) VALUES ($1, $2, $3, $4) ON CONFLICT (iata) DO NOTHING`,
+              [
+                flight.arrival.iata,
+                flight.arrival.icao,
+                flight.arrival.airport,
+                flight.arrival.timezone,
+              ]
+            );
+          }
+        } finally {
+          client.release();
+        }
+      });
+
+      await Promise.all(insertPromises);
+      console.log("📄 Sample data loaded successfully!");
+
+      // Add additional sample data
+      await addAdditionalSampleData();
+      console.log("📄 Additional sample data added successfully!");
+      resolve();
+    } catch (error) {
+      console.error("Error loading sample data:", error);
+      resolve(); // Don't fail if sample data can't be loaded
+    }
   });
 }
 
 // Function to add additional sample data
 function addAdditionalSampleData() {
-  return new Promise((resolve, reject) => {
-    const additionalFlights = generateAdditionalSampleData();
-    console.log(`📄 Adding ${additionalFlights.length} additional flights...`);
+  return new Promise(async (resolve, reject) => {
+    try {
+      const additionalFlights = generateAdditionalSampleData();
+      console.log(
+        `📄 Adding ${additionalFlights.length} additional flights...`
+      );
 
-    const insertPromises = additionalFlights.map((flight) => {
-      return new Promise((insertResolve, insertReject) => {
-        const insertQuery = `
-          INSERT OR IGNORE INTO flights (
-            flight_date, flight_status, flight_number,
-            airline_iata, airline_icao, airline_name,
-            departure_airport_iata, departure_airport_icao, departure_airport_name,
-            departure_terminal, departure_gate, 
-            departure_scheduled, departure_estimated, departure_actual, departure_delay,
-            arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
-            arrival_terminal, arrival_gate, arrival_baggage,
-            arrival_scheduled, arrival_estimated, arrival_actual, arrival_delay,
-            is_delayed, is_cancelled
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+      const insertPromises = additionalFlights.map(async (flight) => {
+        const client = await db.connect();
+        try {
+          const insertQuery = `
+            INSERT INTO flights (
+              flight_date, flight_status, flight_number,
+              airline_iata, airline_icao, airline_name,
+              departure_airport_iata, departure_airport_icao, departure_airport_name,
+              departure_terminal, departure_gate, 
+              departure_scheduled, departure_estimated, departure_actual, departure_delay,
+              arrival_airport_iata, arrival_airport_icao, arrival_airport_name,
+              arrival_terminal, arrival_gate, arrival_baggage,
+              arrival_scheduled, arrival_estimated, arrival_actual, arrival_delay,
+              is_delayed, is_cancelled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+            ON CONFLICT DO NOTHING
+          `;
 
-        const values = [
-          flight.flight_date,
-          flight.flight_status,
-          flight.flight_number,
-          flight.airline_iata,
-          flight.airline_icao,
-          flight.airline_name,
-          flight.departure_airport_iata,
-          flight.departure_airport_icao,
-          flight.departure_airport_name,
-          flight.departure_terminal,
-          flight.departure_gate,
-          flight.departure_scheduled,
-          flight.departure_estimated,
-          flight.departure_actual,
-          flight.departure_delay,
-          flight.arrival_airport_iata,
-          flight.arrival_airport_icao,
-          flight.arrival_airport_name,
-          flight.arrival_terminal,
-          flight.arrival_gate,
-          flight.arrival_baggage,
-          flight.arrival_scheduled,
-          flight.arrival_estimated,
-          flight.arrival_actual,
-          flight.arrival_delay,
-          flight.is_delayed,
-          flight.is_cancelled,
-        ];
+          const values = [
+            flight.flight_date,
+            flight.flight_status,
+            flight.flight_number,
+            flight.airline_iata,
+            flight.airline_icao,
+            flight.airline_name,
+            flight.departure_airport_iata,
+            flight.departure_airport_icao,
+            flight.departure_airport_name,
+            flight.departure_terminal,
+            flight.departure_gate,
+            flight.departure_scheduled,
+            flight.departure_estimated,
+            flight.departure_actual,
+            flight.departure_delay,
+            flight.arrival_airport_iata,
+            flight.arrival_airport_icao,
+            flight.arrival_airport_name,
+            flight.arrival_terminal,
+            flight.arrival_gate,
+            flight.arrival_baggage,
+            flight.arrival_scheduled,
+            flight.arrival_estimated,
+            flight.arrival_actual,
+            flight.arrival_delay,
+            flight.is_delayed,
+            flight.is_cancelled,
+          ];
 
-        db.run(insertQuery, values, function (err) {
-          if (err) {
-            console.error("Error inserting additional flight:", err);
-            insertReject(err);
-          } else {
-            insertResolve();
+          await client.query(insertQuery, values);
+
+          // Also insert airlines and airports if they don't exist
+          if (flight.airline_iata) {
+            await client.query(
+              `INSERT INTO airlines (iata, icao, name) VALUES ($1, $2, $3) ON CONFLICT (iata) DO NOTHING`,
+              [flight.airline_iata, flight.airline_icao, flight.airline_name]
+            );
           }
-        });
 
-        // Also insert airlines and airports if they don't exist
-        if (flight.airline_iata) {
-          db.run(
-            `INSERT OR IGNORE INTO airlines (iata, icao, name) VALUES (?, ?, ?)`,
-            [flight.airline_iata, flight.airline_icao, flight.airline_name]
-          );
-        }
+          if (flight.departure_airport_iata) {
+            await client.query(
+              `INSERT INTO airports (iata, icao, name, timezone) VALUES ($1, $2, $3, $4) ON CONFLICT (iata) DO NOTHING`,
+              [
+                flight.departure_airport_iata,
+                flight.departure_airport_icao,
+                flight.departure_airport_name,
+                "UTC",
+              ]
+            );
+          }
 
-        if (flight.departure_airport_iata) {
-          db.run(
-            `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
-            [
-              flight.departure_airport_iata,
-              flight.departure_airport_icao,
-              flight.departure_airport_name,
-              "UTC",
-            ]
-          );
-        }
-
-        if (flight.arrival_airport_iata) {
-          db.run(
-            `INSERT OR IGNORE INTO airports (iata, icao, name, timezone) VALUES (?, ?, ?, ?)`,
-            [
-              flight.arrival_airport_iata,
-              flight.arrival_airport_icao,
-              flight.arrival_airport_name,
-              "UTC",
-            ]
-          );
+          if (flight.arrival_airport_iata) {
+            await client.query(
+              `INSERT INTO airports (iata, icao, name, timezone) VALUES ($1, $2, $3, $4) ON CONFLICT (iata) DO NOTHING`,
+              [
+                flight.arrival_airport_iata,
+                flight.arrival_airport_icao,
+                flight.arrival_airport_name,
+                "UTC",
+              ]
+            );
+          }
+        } finally {
+          client.release();
         }
       });
-    });
 
-    Promise.all(insertPromises)
-      .then(() => {
-        console.log("📄 Additional sample data inserted successfully!");
-        resolve();
-      })
-      .catch(reject);
+      await Promise.all(insertPromises);
+      console.log("📄 Additional sample data inserted successfully!");
+      resolve();
+    } catch (error) {
+      console.error("Error inserting additional sample data:", error);
+      reject(error);
+    }
   });
 }
 
