@@ -1,0 +1,19 @@
+{
+  "name": "travelsure-chainlink-functions-test",
+  "version": "1.0.0",
+  "description": "Test script for Chainlink Functions integration with Travelsure",
+  "main": "scripts/test-chainlink-functions.js",
+  "scripts": {
+    "test-functions": "node scripts/test-chainlink-functions.js",
+    "simulate": "node scripts/test-chainlink-functions.js"
+  },
+  "dependencies": {
+    "@chainlink/functions-toolkit": "^0.0.20",
+    "@chainlink/env-enc": "^0.0.7",
+    "ethers": "^6.0.0"
+  },
+  "devDependencies": {},
+  "keywords": ["chainlink", "functions", "travelsure", "flight-insurance"],
+  "author": "Travelsure Team",
+  "license": "MIT"
+}

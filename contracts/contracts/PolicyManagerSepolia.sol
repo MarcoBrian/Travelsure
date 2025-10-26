@@ -5,9 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
 import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
 
 library PricingLib {
     function quote(uint256 payout, uint16 probBps, uint16 marginBps) internal pure returns (uint256) {
@@ -16,8 +18,9 @@ library PricingLib {
     }
 }
 
-contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
+contract PolicyManagerSepolia is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using FunctionsRequest for FunctionsRequest.Request;
     // FunctionsRequest helpers not used in mock setup
 
     // ---------------- Types ----------------
@@ -36,6 +39,8 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         PolicyTier tier;
         string  departure;
         string  arrival;
+        string  flightNumber; // Add flight number field
+        string  flightDate;   // Add flight date field (YYYY-MM-DD format)
     }
 
     struct TierConfig {
@@ -52,9 +57,12 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         uint64  departureTime;
         string  departure;
         string  arrival;
+        string  flightNumber; // Add flight number to purchase params
+        string  flightDate;   // Add flight date to purchase params (YYYY-MM-DD format)
     }
 
     // ---------------- Config ----------------
+    //https://sepolia.etherscan.io/token/0xcac524bca292aaade2df8a05cc58f0a65b1b3bb9
     IERC20 public immutable PYUSD;
     uint8 public immutable pyusdDecimals;
 
@@ -80,11 +88,15 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     // Tier configurations
     mapping(PolicyTier => TierConfig) public tierConfigs;
 
+    // Chainlink Functions JavaScript source code (updatable by owner)
+    string public jsSource;
+
 
     // ----Utils---
     function _key(address user, bytes32 flightHash) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(user, flightHash));
     }
+
 
     function _releasePolicy(uint256 id) internal {
         Policy storage pol = policies[id];
@@ -160,6 +172,7 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     event ExpiryWindowUpdated(uint64 expiryWindow);
     event DonIDUpdated(bytes32 donID);
     event SubscriptionIDUpdated(uint64 subscriptionId);
+    event JsSourceUpdated(string jsSource);
     event TierConfigUpdated(PolicyTier indexed tier, uint256 basePayout, uint16 premiumMultiplierBps, uint64 thresholdMinutes, uint16 probBps, uint16 marginBps, bool active);
 
     // ---------------- Admin to set Chainlink Functions config----------------
@@ -167,6 +180,12 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         subscriptionId = _subId;
         fulfillGasLimit = _gasLimit;
         donID = _donID;
+    }
+
+    // ---------------- Admin to set JavaScript source code ----------------
+    function setJsSource(string calldata _jsSource) external onlyOwner {
+        jsSource = _jsSource;
+        emit JsSourceUpdated(_jsSource);
     }
 
     // ---------------- Admin functions to set Insurance Parameters ----------------
@@ -261,7 +280,9 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
             status: FlightStatus.Active,
             tier: tier,
             departure: p.departure,
-            arrival: p.arrival
+            arrival: p.arrival,
+            flightNumber: p.flightNumber,
+            flightDate: p.flightDate
         });
         _ownedPolicies[msg.sender].push(policyId);
         hasActivePolicy[key] = true;
@@ -272,9 +293,9 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
     // ---------------- Chainlink Functions: SEND ----------------
     /**
      * Initiate a Chainlink Functions run for a specific policy.
-     * `args` example for demo: ["DEMO_TRUE","90","120"]
+     * Passes flight information to the Chainlink function to check delay status.
      */
-    function requestVerification(uint256 policyId, string[] calldata /* args */)
+    function requestVerification(uint256 policyId)
         external
         returns (bytes32 requestId)
     {
@@ -284,9 +305,21 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
         require(block.timestamp >= p.departureTime, "Too early");
         require(block.timestamp <= p.expiry, "Expired window");
 
-        // Send empty payload; mock router can ignore and respond deterministically
+        // Prepare flight data for Chainlink function
+        string[] memory args = new string[](2);
+        args[0] = p.flightNumber; // Extract flight number from policy
+        args[1] = p.flightDate;   // Extract flight date from policy
+
+        // Use stored JavaScript source code for Chainlink Functions
+        require(bytes(jsSource).length > 0, "JS source not set");
+
+        // Initialize the Functions request
+        FunctionsRequest.Request memory req;
+        req.initializeRequestForInlineJavaScript(jsSource);
+        req.setArgs(args);
+
         bytes32 reqId = _sendRequest(
-            bytes(""),
+            req.encodeCBOR(),
             subscriptionId,
             fulfillGasLimit,
             donID
@@ -299,7 +332,8 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
 
     // ---------------- Chainlink Functions: FULFILL ----------------
     /**
-     * Router-only callback. Decodes (bool occurred, uint64 delayMinutes) and settles if eligible.
+     * Router-only callback. Decodes JSON response from Travelsure API and settles if eligible.
+     * Expected response format: {"isDelayed": true} or {"isDelayed": false}
      */
     function fulfillRequest(bytes32 requestId, bytes memory response, bytes memory err) internal override {
         uint256 policyId = requestToPolicy[requestId];
@@ -313,14 +347,23 @@ contract PolicyManager is FunctionsClient, ConfirmedOwner, ReentrancyGuard {
             return; // ignore late fulfillments
         }
 
-        bool occurred;
-        uint64 delayMinutes;
+        bool occurred = false;
+        uint64 delayMinutes = 0;
 
         if (err.length == 0 && response.length > 0) {
-            (occurred, delayMinutes) = abi.decode(response, (bool, uint64));
-        } else {
-            occurred = false;
-            delayMinutes = 0;
+            // Decode the uint256 response from Chainlink function
+            // 1 = delayed, 0 = not delayed
+            uint256 delayStatus = abi.decode(response, (uint256));
+            
+            if (delayStatus == 1) {
+                // Flight is delayed
+                occurred = true;
+                delayMinutes = p.thresholdMinutes; // Use the policy's threshold as the delay
+            } else {
+                // Flight is not delayed (delayStatus == 0)
+                occurred = false;
+                delayMinutes = 0;
+            }
         }
 
         emit OracleResult(policyId, occurred, delayMinutes);

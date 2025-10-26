@@ -4,6 +4,7 @@ import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers";
 import hardhatIgnitionPlugin from "@nomicfoundation/hardhat-ignition";
 import { configVariable } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox-viem";
+import "dotenv/config";
 
 const config: HardhatUserConfig = {
   plugins: [hardhatIgnitionPlugin, hardhatToolboxMochaEthers],
@@ -11,6 +12,13 @@ const config: HardhatUserConfig = {
     profiles: {
       default: {
         version: "0.8.28",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+          viaIR: true,
+        },
       },
       production: {
         version: "0.8.28",
@@ -19,6 +27,7 @@ const config: HardhatUserConfig = {
             enabled: true,
             runs: 200,
           },
+          viaIR: true,
         },
       },
     },
@@ -43,6 +52,8 @@ const config: HardhatUserConfig = {
       chainType: "l1",
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      gasPrice: "auto",
+      gas: "auto",
     },
   },
 };

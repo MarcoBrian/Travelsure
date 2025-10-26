@@ -47,4 +47,15 @@ contract MockFunctionsRouter {
     IFunctionsClientExternal(client).handleOracleFulfillment(requestId, response, err);
     emit Simulated(requestId, occurred, delayMinutes);
   }
+
+  /// Simulate the DON finishing with a custom response (for JSON responses)
+  function simulateFulfillWithResponse(
+    address client,
+    bytes32 requestId,
+    bytes calldata response,
+    bytes calldata err
+  ) external onlyOwner {
+    IFunctionsClientExternal(client).handleOracleFulfillment(requestId, response, err);
+    emit Simulated(requestId, false, 0); // Generic event for custom responses
+  }
 }
