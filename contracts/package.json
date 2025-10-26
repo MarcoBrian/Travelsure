@@ -5,7 +5,10 @@
   "scripts": {
     "node-localhost": "hardhat node --network localhost",
     "deploy-local": "hardhat ignition deploy ignition/modules/PolicyStack.ts --network localhost",
-    "simulate-fulfill": "hardhat run scripts/simulate-fulfill.ts --network localhost"
+    "simulate-fulfill": "hardhat run scripts/simulate-fulfill.ts --network localhost",
+    "deploy-sepolia": "hardhat run scripts/sepolia/deploy-sepolia.ts --network sepolia",
+    "add-consumer": "hardhat run scripts/sepolia/add-consumer.ts --network sepolia",
+    "test-sepolia": "hardhat run scripts/sepolia/test-new-deployment.ts --network sepolia"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
@@ -23,6 +26,7 @@
     "@chainlink/contracts": "^1.5.0",
     "@nomicfoundation/hardhat-ethers": "^4.0.2",
     "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.2.3",
     "ethers": "^6.15.0"
   }
 }

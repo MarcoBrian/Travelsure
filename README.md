@@ -17,7 +17,8 @@ Travelsure revolutionizes travel insurance by leveraging Web3 technology to crea
 - **Transparent Terms**: All policy terms are recorded on-chain
 - **AI-Powered Recommendations**: Intelligent agent suggests optimal coverage
 - **Multi-Tier Coverage**: Basic, Silver, Gold, and Platinum policy tiers
-- **Real-time Monitoring**: Chainlink oracles track flight status continuously
+- **Real-time Monitoring**: Chainlink Functions oracles track flight status continuously
+- **Decentralized Verification**: Flight data verified through Chainlink's decentralized oracle network
 
 ### How It Works
 
@@ -28,9 +29,11 @@ Travelsure revolutionizes travel insurance by leveraging Web3 technology to crea
 ## Architecture
 
 ### Smart Contracts
-- **PolicyManager**: Core contract managing policies, payouts, and tier configurations
-- **PYUSDMock**: Mock PayPal USD token for testing
-- **MockFunctionsRouter**: Chainlink Functions router for oracle integration
+- **PolicyManager**: Core contract managing policies, payouts, and tier configurations (localhost)
+- **PolicyManagerSepolia**: Sepolia testnet version with real Chainlink Functions integration
+- **PYUSDMock**: Mock PayPal USD token for testing (localhost)
+- **PYUSD (Official)**: Official PayPal USD token on Sepolia testnet
+- **MockFunctionsRouter**: Chainlink Functions router for oracle integration (localhost)
 
 ### Frontend
 - **Next.js 15**: Modern React framework with TypeScript
@@ -206,6 +209,40 @@ python -m pytest tests/
 
 ### Local Development
 Follow the "Getting Started" section above for local development.
+
+### Sepolia Testnet Deployment
+
+#### Contract Addresses
+- **PolicyManagerSepolia**: `0x855E81e27435F79A4145be74399DC992dB3C3ede`
+- **PYUSD (Official)**: `0xCaC524BcA292aaade2DF8A05cC58F0a65B1B3bB9`
+- **Chainlink Functions Router**: `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0`
+- **DON ID**: `0x66756e2d657468657265756d2d7365706f6c69612d3100000000000000000000`
+
+#### Deployment Commands
+```bash
+cd contracts
+npm run deploy-sepolia    # Deploy to Sepolia testnet
+npm run add-consumer      # Add contract as Chainlink consumer
+npm run test-sepolia      # Test deployment with Chainlink Functions
+```
+
+#### Prerequisites for Sepolia
+1. **Environment Setup**: Copy `env.example` to `.env` and configure:
+   - `SEPOLIA_RPC_URL`: Your Sepolia RPC endpoint
+   - `SEPOLIA_PRIVATE_KEY`: Your wallet private key
+   - `CHAINLINK_SUBSCRIPTION_ID`: Your Chainlink Functions subscription
+   - `CHAINLINK_DON_ID`: Sepolia DON ID
+   - `CHAINLINK_FUNCTIONS_ROUTER`: Sepolia Functions Router
+
+2. **Funding Requirements**:
+   - Sepolia ETH for gas fees
+   - Chainlink Functions subscription with LINK balance
+   - PYUSD tokens for testing (acquire from [Circle Faucet](https://faucet.circle.com/))
+
+3. **Chainlink Functions Setup**:
+   - Create subscription on [Chainlink Functions](https://functions.chain.link/)
+   - Add contract as authorized consumer
+   - Ensure sufficient LINK balance for oracle calls
 
 ### Production Deployment
 1. Deploy contracts to your target network

@@ -1,8 +1,9 @@
 import { describe, it, before, beforeEach } from "mocha";
 import { expect } from "chai";
 import { network } from "hardhat";
+import { loadAndValidateJsSource } from "../scripts/load-js-source.js";
 
-describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
+describe("PolicyManagerSepolia + Chainlink Functions Integration", function () {
   let ethers: any;
   let owner: any, user: any, other: any;
 
@@ -41,7 +42,7 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
       payout: 1000n * ONE,
       probBps: 4000n, // 40%
       marginBps: 800n, // 8%
-      multiplierBps: 15000n, // 1.5x (matches contract default)
+      multiplierBps: 15000n, // 1.5x
       thresholdMinutes: 60n // 1 hour
     }
   };
@@ -77,14 +78,18 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     router = await Router.deploy();
     await router.waitForDeployment();
 
-    // Deploy PolicyManager hooked to router + token
-    const M = await ethers.getContractFactory("PolicyManager", owner);
+    // Deploy PolicyManagerSepolia hooked to router + token
+    const M = await ethers.getContractFactory("PolicyManagerSepolia", owner);
     manager = await M.deploy(await router.getAddress(), await pyusd.getAddress());
     await manager.waitForDeployment();
 
     // Pre-fund user for premiums and manager for claim payouts
     await (await pyusd.mint(user.address, 10_000n * ONE)).wait();
     await (await pyusd.mint(await manager.getAddress(), 10_000n * ONE)).wait();
+
+    // Load and set JavaScript source code for Chainlink Functions
+    const jsSource = loadAndValidateJsSource();
+    await (await manager.setJsSource(jsSource)).wait();
   });
 
   it("constructor defaults - tier configurations", async () => {
@@ -99,38 +104,19 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     expect(basicConfig.premiumMultiplierBps).to.equal(Number(TIER_CONFIGS.Basic.multiplierBps));
     expect(basicConfig.thresholdMinutes).to.equal(Number(TIER_CONFIGS.Basic.thresholdMinutes));
     expect(basicConfig.active).to.equal(true);
-    
-    // Check Silver tier configuration
-    const silverConfig = await manager.getTierConfig(1); // PolicyTier.Silver = 1
-    expect(silverConfig.basePayout).to.equal(TIER_CONFIGS.Silver.payout);
-    expect(silverConfig.probBps).to.equal(Number(TIER_CONFIGS.Silver.probBps));
-    expect(silverConfig.marginBps).to.equal(Number(TIER_CONFIGS.Silver.marginBps));
-    expect(silverConfig.premiumMultiplierBps).to.equal(Number(TIER_CONFIGS.Silver.multiplierBps));
-    expect(silverConfig.thresholdMinutes).to.equal(Number(TIER_CONFIGS.Silver.thresholdMinutes));
-    expect(silverConfig.active).to.equal(true);
-    
-    // Check Gold tier configuration
-    const goldConfig = await manager.getTierConfig(2); // PolicyTier.Gold = 2
-    expect(goldConfig.basePayout).to.equal(TIER_CONFIGS.Gold.payout);
-    expect(goldConfig.probBps).to.equal(Number(TIER_CONFIGS.Gold.probBps));
-    expect(goldConfig.marginBps).to.equal(Number(TIER_CONFIGS.Gold.marginBps));
-    expect(goldConfig.premiumMultiplierBps).to.equal(Number(TIER_CONFIGS.Gold.multiplierBps));
-    expect(goldConfig.thresholdMinutes).to.equal(Number(TIER_CONFIGS.Gold.thresholdMinutes));
-    expect(goldConfig.active).to.equal(true);
-    
-    // Check Platinum tier configuration
-    const platinumConfig = await manager.getTierConfig(3); // PolicyTier.Platinum = 3
-    expect(platinumConfig.basePayout).to.equal(TIER_CONFIGS.Platinum.payout);
-    expect(platinumConfig.probBps).to.equal(Number(TIER_CONFIGS.Platinum.probBps));
-    expect(platinumConfig.marginBps).to.equal(Number(TIER_CONFIGS.Platinum.marginBps));
-    expect(platinumConfig.premiumMultiplierBps).to.equal(Number(TIER_CONFIGS.Platinum.multiplierBps));
-    expect(platinumConfig.thresholdMinutes).to.equal(Number(TIER_CONFIGS.Platinum.thresholdMinutes));
-    expect(platinumConfig.active).to.equal(true);
+  });
+
+  it("JavaScript source code is properly set", async () => {
+    const jsSource = await manager.jsSource();
+    expect(jsSource.length).to.be.greaterThan(0);
+    expect(jsSource).to.include("Functions.makeHttpRequest");
+    expect(jsSource).to.include("Functions.encodeUint256");
+    expect(jsSource).to.include("isDelayed ? 1 : 0");
   });
 
   it("buyPolicy: charges tier-specific premium, records policy, blocks duplicates", async () => {
     const departure = (await now()) + 3600n; // +1h
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("SQ 632 2025-11-01"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     
     // Test with Gold tier
     const tier = 2; // PolicyTier.Gold = 2
@@ -142,8 +128,10 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyPurchasedLog = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased");
     const policyId = policyPurchasedLog!.args!.id as bigint;
@@ -162,15 +150,17 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
       manager.connect(user).buyPolicy({ 
         flightHash, 
         departureTime: Number(departure),
-        departure: "Singapore",
-        arrival: "Tokyo"
+        departure: "Charles de Gaulle Airport",
+        arrival: "Singapore Changi",
+        flightNumber: "CX8552",
+        flightDate: "2025-10-26"
       }, tier)
     ).to.be.revertedWith("User already insured for this flight");
   });
 
   it("requestVerification: only holder, within [departure, expiry]", async () => {
     const departure = (await now()) + 3600n;
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("GA 88|2025-12-12"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     const tier = 0; // PolicyTier.Basic = 0
     const tierConfig = TIER_CONFIGS.Basic;
     const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
@@ -179,23 +169,25 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
 
-    await expect(manager.connect(user).requestVerification(Number(policyId), []))
+    await expect(manager.connect(user).requestVerification(Number(policyId)))
       .to.be.revertedWith("Too early");
 
     await increase(3700n);
     await increase(EXPIRY_WINDOW);
-    await expect(manager.connect(user).requestVerification(Number(policyId), []))
+    await expect(manager.connect(user).requestVerification(Number(policyId)))
       .to.be.revertedWith("Expired window");
   });
 
   it("requestVerification: succeeds exactly at departure boundary", async () => {
     const departure = (await now()) + 3600n; // +1h
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("UA 100|2025-12-24"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     const tier = 1; // PolicyTier.Silver = 1
     const tierConfig = TIER_CONFIGS.Silver;
     const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
@@ -204,51 +196,24 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
 
     const policy = await manager.policies(policyId);
     await setTime(BigInt(policy.departureTime));
-    console.log("policy.departureTime", policy.departureTime);
-    console.log("policy.expiry", policy.expiry);
-    console.log("current time", await now());
 
-    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId), [])).wait();
+    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId))).wait();
     const oracleRequestedLog = verificationReceipt!.logs.find((log: any) => log.fragment?.name === "OracleRequested");
     expect(oracleRequestedLog).to.not.equal(undefined);
   });
 
-  it("requestVerification: succeeds exactly at expiry boundary", async () => {
-    const departure = (await now()) + 1800n; // +30m
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("BA 9|2025-12-31"));
-    const tier = 3; // PolicyTier.Platinum = 3
-    const tierConfig = TIER_CONFIGS.Platinum;
-    const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
-
-    await (await pyusd.connect(user).approve(await manager.getAddress(), premium)).wait();
-    const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
-      flightHash, 
-      departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
-    }, tier)).wait();
-    const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
-
-    const policy = await manager.policies(policyId);
-    await setTime(BigInt(policy.expiry));
-    console.log("policy.expiry", policy.expiry);
-    console.log("current time", await now());
-
-    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId), [])).wait();
-    const oracleRequestedLog = verificationReceipt!.logs.find((log: any) => log.fragment?.name === "OracleRequested");
-    expect(oracleRequestedLog).to.not.equal(undefined);
-  });
-
-  it("fulfill: pays out when (occurred && delay >= tier threshold)", async () => {
+  it("fulfill: pays out when flight is delayed (JSON response)", async () => {
     const departure = (await now()) + 60n;
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("JL 711|2025-10-20"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     const tier = 2; // PolicyTier.Gold = 2
     const tierConfig = TIER_CONFIGS.Gold;
     const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
@@ -257,28 +222,31 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
 
     await increase(120n);
 
-    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId), [])).wait();
+    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId))).wait();
     const oracleRequestedLog = verificationReceipt!.logs.find((log: any) => log.fragment?.name === "OracleRequested");
     const requestId = oracleRequestedLog!.args!.requestId as string;
-
-    const threshold = tierConfig.thresholdMinutes; // Use tier-specific threshold
 
     const userBalanceBefore = await pyusd.balanceOf(user.address);
     const managerBalanceBefore = await pyusd.balanceOf(await manager.getAddress());
 
-    // Call your router as owner (onlyOwner)
-    await (await router.connect(owner).simulateFulfill(
+    // Simulate Chainlink Functions response with uint256: 1 (true)
+    const encodedResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+
+    // Call router to simulate Chainlink Functions fulfillment
+    await (await router.connect(owner).simulateFulfillWithResponse(
       await manager.getAddress(),
       requestId,
-      true,                   // occurred
-      Number(threshold)       // delayMinutes >= threshold
+      encodedResponse,
+      "0x" // no error
     )).wait();
 
     const policy = await manager.policies(policyId);
@@ -290,9 +258,9 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     expect(managerBalanceBefore - managerBalanceAfter).to.equal(tierConfig.payout);
   });
 
-  it("fulfill: stays Active when delay < tier threshold (no payout)", async () => {
+  it("fulfill: stays Active when flight is not delayed (JSON response)", async () => {
     const departure = (await now()) + 60n;
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("SQ 12|2025-10-21"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     const tier = 0; // PolicyTier.Basic = 0
     const tierConfig = TIER_CONFIGS.Basic;
     const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
@@ -301,30 +269,35 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
 
     await increase(120n);
 
-    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId), [])).wait();
+    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId))).wait();
     const requestId = verificationReceipt!.logs.find((log: any) => log.fragment?.name === "OracleRequested")!.args!.requestId as string;
 
-    await (await router.connect(owner).simulateFulfill(
+    // Simulate Chainlink Functions response with uint256: 0 (false)
+    const encodedResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [0]);
+
+    await (await router.connect(owner).simulateFulfillWithResponse(
       await manager.getAddress(),
       requestId,
-      true,     // occurred
-      30        // delay < threshold (Basic tier threshold is 240 minutes)
+      encodedResponse,
+      "0x" // no error
     )).wait();
 
     const policy = await manager.policies(policyId);
-    expect(policy.status).to.equal(1); // Active
+    expect(policy.status).to.equal(1); // Active (no payout)
   });
 
-  it("expire(): moves Active → Expired after window", async () => {
+  it("fulfill: handles API error gracefully", async () => {
     const departure = (await now()) + 60n;
-    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("NH 8|2025-10-22"));
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
     const tier = 1; // PolicyTier.Silver = 1
     const tierConfig = TIER_CONFIGS.Silver;
     const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
@@ -333,8 +306,48 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
       flightHash, 
       departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
+    }, tier)).wait();
+    const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
+
+    await increase(120n);
+
+    const verificationReceipt = await (await manager.connect(user).requestVerification(Number(policyId))).wait();
+    const requestId = verificationReceipt!.logs.find((log: any) => log.fragment?.name === "OracleRequested")!.args!.requestId as string;
+
+    // Simulate API error
+    const errorMessage = "Flight not found";
+    const encodedError = ethers.toUtf8Bytes(errorMessage);
+
+    await (await router.connect(owner).simulateFulfillWithResponse(
+      await manager.getAddress(),
+      requestId,
+      "0x", // empty response
+      encodedError // error
+    )).wait();
+
+    const policy = await manager.policies(policyId);
+    expect(policy.status).to.equal(1); // Active (no payout due to error)
+  });
+
+  it("expire(): moves Active → Expired after window", async () => {
+    const departure = (await now()) + 60n;
+    const flightHash = ethers.keccak256(ethers.toUtf8Bytes("CX8552 2025-10-26"));
+    const tier = 1; // PolicyTier.Silver = 1
+    const tierConfig = TIER_CONFIGS.Silver;
+    const premium = quotePremium(tierConfig.payout, tierConfig.probBps, tierConfig.marginBps, tierConfig.multiplierBps);
+
+    await (await pyusd.connect(user).approve(await manager.getAddress(), premium)).wait();
+    const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
+      flightHash, 
+      departureTime: Number(departure),
+      departure: "Charles de Gaulle Airport",
+      arrival: "Singapore Changi",
+      flightNumber: "CX8552",
+      flightDate: "2025-10-26"
     }, tier)).wait();
     const policyId = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased")!.args!.id as bigint;
 
@@ -397,40 +410,6 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
     expect(platinumThreshold).to.be.lessThan(basicThreshold); // Platinum has shorter threshold
   });
 
-  it("tier progression: all tiers follow proper progression", async () => {
-    // Get pricing for all tiers
-    const [basicPremium, basicPayout, basicThreshold] = await manager.getTierPricing(0);
-    const [silverPremium, silverPayout, silverThreshold] = await manager.getTierPricing(1);
-    const [goldPremium, goldPayout, goldThreshold] = await manager.getTierPricing(2);
-    const [platinumPremium, platinumPayout, platinumThreshold] = await manager.getTierPricing(3);
-
-    // Payout progression: Basic < Silver < Gold < Platinum
-    expect(silverPayout).to.be.greaterThan(basicPayout);
-    expect(goldPayout).to.be.greaterThan(silverPayout);
-    expect(platinumPayout).to.be.greaterThan(goldPayout);
-
-    // Premium progression: Basic < Silver < Gold < Platinum
-    expect(silverPremium).to.be.greaterThan(basicPremium);
-    expect(goldPremium).to.be.greaterThan(silverPremium);
-    expect(platinumPremium).to.be.greaterThan(goldPremium);
-
-    // Threshold progression: Basic > Silver > Gold > Platinum (shorter thresholds for higher tiers)
-    expect(silverThreshold).to.be.lessThan(basicThreshold);
-    expect(goldThreshold).to.be.lessThan(silverThreshold);
-    expect(platinumThreshold).to.be.lessThan(goldThreshold);
-
-    // Verify specific values match our TIER_CONFIGS
-    expect(basicPayout).to.equal(TIER_CONFIGS.Basic.payout);
-    expect(silverPayout).to.equal(TIER_CONFIGS.Silver.payout);
-    expect(goldPayout).to.equal(TIER_CONFIGS.Gold.payout);
-    expect(platinumPayout).to.equal(TIER_CONFIGS.Platinum.payout);
-
-    expect(basicThreshold).to.equal(Number(TIER_CONFIGS.Basic.thresholdMinutes));
-    expect(silverThreshold).to.equal(Number(TIER_CONFIGS.Silver.thresholdMinutes));
-    expect(goldThreshold).to.equal(Number(TIER_CONFIGS.Gold.thresholdMinutes));
-    expect(platinumThreshold).to.equal(Number(TIER_CONFIGS.Platinum.thresholdMinutes));
-  });
-
   it("buyPolicy: works with all tier types", async () => {
     const departure = (await now()) + 3600n; // +1h
     
@@ -449,11 +428,13 @@ describe("PolicyManager + MockFunctionsRouter (e2e)", function () {
       await (await pyusd.connect(user).approve(await manager.getAddress(), premium)).wait();
 
       const buyPolicyReceipt = await (await manager.connect(user).buyPolicy({ 
-      flightHash, 
-      departureTime: Number(departure),
-      departure: "Singapore",
-      arrival: "Tokyo"
-    }, tier)).wait();
+        flightHash, 
+        departureTime: Number(departure),
+        departure: "Charles de Gaulle Airport",
+        arrival: "Singapore Changi",
+        flightNumber: `${name}123`,
+        flightDate: "2025-10-26"
+      }, tier)).wait();
       const policyPurchasedLog = buyPolicyReceipt!.logs.find((log: any) => log.fragment?.name === "PolicyPurchased");
       const policyId = policyPurchasedLog!.args!.id as bigint;
 

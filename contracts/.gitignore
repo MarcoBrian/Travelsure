@@ -21,3 +21,4 @@
 
 /ignition/deployments/*
 
+.env
