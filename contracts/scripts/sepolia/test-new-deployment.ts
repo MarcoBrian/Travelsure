@@ -8,9 +8,9 @@ async function main() {
   const { ethers } = await network.connect();
   const [deployer] = await ethers.getSigners();
 
-  // New contract addresses from deployment
-  const managerAddress = "0x7215536447840E214bd884728dAd590Ed9DA71fB";
-  const pyusdAddress = "0x89Bb53CE56F8dbBfA04ED566b3eE129682A2D5D1";
+  // Contract addresses - updated after deployment
+  const managerAddress = "0x855E81e27435F79A4145be74399DC992dB3C3ede"; // New PolicyManagerSepolia
+  const pyusdAddress = "0xCaC524BcA292aaade2DF8A05cC58F0a65B1B3bB9"; // Official PYUSD on Sepolia
   
   const managerABI = [
     "function policies(uint256) external view returns (tuple(address,bytes32,uint64,uint64,uint64,uint256,uint256,uint8,uint8,string,string,string,string))",
@@ -45,11 +45,19 @@ async function main() {
   const [premium] = await manager.getTierPricing(0);
   console.log("Premium:", ethers.formatUnits(premium, 6), "PYUSD");
   
-  // Ensure deployer has enough PYUSD
+  // Check deployer's PYUSD balance
   const deployerBalance = await pyusd.balanceOf(deployer.address);
+  console.log("Deployer PYUSD balance:", ethers.formatUnits(deployerBalance, 6), "PYUSD");
+  
   if (deployerBalance < premium) {
-    console.log("Minting PYUSD for deployer...");
-    await (await pyusd.mint(deployer.address, premium)).wait();
+    console.log("❌ Insufficient PYUSD balance!");
+    console.log("Required:", ethers.formatUnits(premium, 6), "PYUSD");
+    console.log("Available:", ethers.formatUnits(deployerBalance, 6), "PYUSD");
+    console.log("\n📋 To acquire PYUSD tokens:");
+    console.log("1. Visit: https://faucet.circle.com/");
+    console.log("2. Request PYUSD tokens for Sepolia testnet");
+    console.log("3. Or use a DEX to swap ETH for PYUSD");
+    throw new Error("Insufficient PYUSD balance for testing");
   }
   
   // Approve PYUSD spending
