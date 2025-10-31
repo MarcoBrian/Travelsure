@@ -2,7 +2,7 @@
 
 ![Travelsure - AI-assisted, on-chain flight insurance platform](travelsure-promo.png)
 
-**Shortlisted for ETHOnline 2025 Finalist. Made to Top 15% of Projects Submissions 🏅**
+**Shortlisted at ETHOnline 2025 — Top 15 % of Project Submissions 🏅**
 
 Project Showcase: https://ethglobal.com/showcase/travelsure-roq07
 
