@@ -2,6 +2,10 @@
 
 ![Travelsure - AI-assisted, on-chain flight insurance platform](travelsure-promo.png)
 
+**Shortlisted for ETHOnline 2025 Top 15% of Projects Submissions 🏅**
+
+Project Showcase: https://ethglobal.com/showcase/travelsure-roq07
+
 **On-chain flight delay insurance powered by smart contracts and Chainlink oracles**
 
 Travelsure is a decentralized insurance platform that provides instant payouts for flight delays using blockchain technology (smart contracts). No paperwork, no waiting, no claims process. When your flight is delayed, you get paid automatically.
